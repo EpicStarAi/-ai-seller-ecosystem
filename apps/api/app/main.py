@@ -1,4 +1,6 @@
 from fastapi import FastAPI
+
+from app.organizations import router as organizations_router
 from app.settings import settings
 
 app = FastAPI(
@@ -6,6 +8,8 @@ app = FastAPI(
     version=settings.app_version,
     description="Foundation API for AI Seller Ecosystem.",
 )
+
+app.include_router(organizations_router)
 
 
 @app.get("/health", tags=["system"])
