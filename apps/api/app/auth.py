@@ -1,6 +1,7 @@
+from collections.abc import Callable
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import Annotated, Callable
+from typing import Annotated
 
 import jwt
 from fastapi import Depends, HTTPException, status
