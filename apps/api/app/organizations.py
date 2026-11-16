@@ -1,4 +1,5 @@
 from typing import Annotated
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import text
@@ -14,7 +15,7 @@ DbSession = Annotated[Session, Depends(get_db)]
 CurrentPrincipal = Annotated[Principal, Depends(get_current_principal)]
 
 
-def _upsert_user(session: Session, principal: Principal) -> str:
+def _upsert_user(session: Session, principal: Principal) -> UUID:
     row = session.execute(
         text("""
             INSERT INTO users (auth_subject, email, display_name)
@@ -30,7 +31,7 @@ def _upsert_user(session: Session, principal: Principal) -> str:
             "display_name": principal.display_name,
         },
     ).mappings().one()
-    return str(row["id"])
+    return row["id"]
 
 
 @router.get("", response_model=list[OrganizationRead])
@@ -63,7 +64,7 @@ def create_organization(payload: OrganizationCreate, db: DbSession, principal: C
         with db.begin():
             set_request_context(db, auth_subject=principal.subject)
             user_id = _upsert_user(db, principal)
-            set_request_context(db, user_id=user_id, auth_subject=principal.subject)
+            set_request_context(db, user_id=str(user_id), auth_subject=principal.subject)
             organization = db.execute(
                 text("""
                     INSERT INTO organizations (name, slug, created_by_user_id)
@@ -72,12 +73,12 @@ def create_organization(payload: OrganizationCreate, db: DbSession, principal: C
                 """),
                 {"name": payload.name, "slug": payload.slug, "user_id": user_id},
             ).mappings().one()
-            organization_id = str(organization["id"])
+            organization_id = organization["id"]
             set_request_context(
                 db,
-                user_id=user_id,
+                user_id=str(user_id),
                 auth_subject=principal.subject,
-                organization_id=organization_id,
+                organization_id=str(organization_id),
             )
             db.execute(
                 text("""
