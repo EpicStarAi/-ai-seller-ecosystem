@@ -1,0 +1,72 @@
+openapi: 3.1.0
+info:
+  title: AI Seller Ecosystem API
+  version: 0.1.0
+  description: Initial target contract. Most business endpoints are planned, not implemented.
+servers:
+  - url: https://api.example.invalid/api/v1
+paths:
+  /health:
+    get:
+      summary: Service health
+      responses:
+        "200":
+          description: Healthy
+  /organizations:
+    post:
+      summary: Create organization
+      security: [{ bearerAuth: [] }]
+      responses:
+        "201": { description: Created }
+  /agents:
+    get:
+      summary: List agents in active organization
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: Agent list }
+    post:
+      summary: Create agent draft
+      security: [{ bearerAuth: [] }]
+      responses:
+        "201": { description: Draft created }
+  /agents/{agentId}/runs:
+    post:
+      summary: Start an agent run
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: agentId
+          required: true
+          schema: { type: string, format: uuid }
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema: { type: string, minLength: 12, maxLength: 128 }
+      responses:
+        "202": { description: Run accepted }
+  /integrations/telegram:
+    post:
+      summary: Register Telegram bot integration
+      security: [{ bearerAuth: [] }]
+      responses:
+        "201": { description: Integration registered }
+  /webhooks/telegram/{integrationId}:
+    post:
+      summary: Receive Telegram Bot API update
+      parameters:
+        - in: path
+          name: integrationId
+          required: true
+          schema: { type: string, format: uuid }
+        - in: header
+          name: X-Telegram-Bot-Api-Secret-Token
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Accepted or duplicate ignored }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
