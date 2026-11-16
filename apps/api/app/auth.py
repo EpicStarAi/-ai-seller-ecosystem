@@ -5,7 +5,7 @@ from typing import Annotated, Callable
 import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from jwt import PyJWKClient, PyJWTError
+from jwt import PyJWKClient
 
 from app.settings import settings
 
@@ -42,8 +42,8 @@ def verify_access_token(token: str) -> Principal:
             options={"require": ["exp", "iat", "iss", "aud", "sub"]},
             leeway=30,
         )
-    except (PyJWTError, Exception) as exc:
-        # Do not expose provider/JWKS internals to the caller.
+    except Exception as exc:
+        # JWKS transport and JWT validation errors fail closed without leaking internals.
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired access token",
@@ -77,4 +77,5 @@ def require_roles(*allowed_roles: str) -> Callable:
         if role not in allowed_roles:
             raise HTTPException(status_code=403, detail="Insufficient organization role")
         return role
+
     return dependency
