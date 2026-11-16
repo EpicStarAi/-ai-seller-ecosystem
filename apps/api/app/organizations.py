@@ -97,4 +97,10 @@ def create_organization(payload: OrganizationCreate, db: DbSession, principal: C
             )
         return OrganizationRead(**dict(organization), role="owner")
     except IntegrityError as exc:
-        raise HTTPException(status_code=409, detail="Organization slug is already in use") from exc
+        constraint = getattr(getattr(exc.orig, "diag", None), "constraint_name", None)
+        if constraint == "organizations_slug_key":
+            raise HTTPException(
+                status_code=409,
+                detail="Organization slug is already in use",
+            ) from exc
+        raise
