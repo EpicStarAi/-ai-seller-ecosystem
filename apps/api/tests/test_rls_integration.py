@@ -5,7 +5,6 @@ import pytest
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import DBAPIError
 
-
 ADMIN_URL = os.getenv("TEST_DATABASE_ADMIN_URL")
 RUNTIME_URL = os.getenv("TEST_DATABASE_URL")
 
