@@ -25,9 +25,10 @@ CREATE POLICY users_update_self ON users
 
 ALTER TABLE organizations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE organizations FORCE ROW LEVEL SECURITY;
-CREATE POLICY organizations_select_member ON organizations
+CREATE POLICY organizations_select_member_or_creator ON organizations
   FOR SELECT USING (
-    EXISTS (
+    created_by_user_id::text = NULLIF(current_setting('app.current_user_id', true), '')
+    OR EXISTS (
       SELECT 1 FROM memberships m
       WHERE m.organization_id = organizations.id
         AND m.user_id::text = NULLIF(current_setting('app.current_user_id', true), '')
