@@ -1,3 +1,5 @@
+from uuid import UUID
+
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
@@ -15,7 +17,7 @@ class OrganizationCreate(BaseModel):
 
 
 class OrganizationRead(BaseModel):
-    id: str
+    id: UUID
     name: str
     slug: str
     role: str
