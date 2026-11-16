@@ -1,5 +1,3 @@
-import re
-
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
@@ -10,7 +8,10 @@ class OrganizationCreate(BaseModel):
     @field_validator("name")
     @classmethod
     def normalize_name(cls, value: str) -> str:
-        return value.strip()
+        normalized = value.strip()
+        if len(normalized) < 2:
+            raise ValueError("Organization name must contain at least two non-space characters")
+        return normalized
 
 
 class OrganizationRead(BaseModel):
