@@ -1,7 +1,9 @@
 # Identity and Tenant Isolation — Implementation Notes
 
 ## Authentication contract
-The API accepts OIDC access tokens signed with RS256. Configure `AUTH_JWKS_URL`, `AUTH_ISSUER` and `AUTH_AUDIENCE`. The API validates signature, issuer, audience, expiry and required claims. It does not issue passwords or local login tokens; identity lifecycle belongs to the configured identity provider.
+The web application uses Supabase Auth with email/password and cookie-based PKCE sessions through `@supabase/ssr`. The browser receives only the Supabase publishable key; no service-role or secret key is exposed.
+
+The API accepts OIDC access tokens signed with an asymmetric key. It validates the signature against the configured JWKS, issuer, audience, expiry and required claims. The algorithm allowlist is RS256 and ES256: the active signing key discovered for the current Supabase project is ES256. HS256 is intentionally not accepted by the API. Configure `AUTH_JWKS_URL`, `AUTH_ISSUER` and `AUTH_AUDIENCE` from the Supabase project's OIDC discovery metadata.
 
 ## Organization lifecycle
 - Organization creation maps the stable OIDC `sub` to a local user.
@@ -24,5 +26,6 @@ Unit tests cover fail-closed OIDC configuration and role checks. PostgreSQL inte
 ## Current limitations
 - No user invitation/acceptance flow yet.
 - No membership role-management endpoints yet.
-- No production identity provider configured.
+- No organization provisioning from the web signup flow yet.
+- Production identity provider settings and email delivery must be verified.
 - PostgreSQL RLS integration test has not been executed against a live database in this development session.
