@@ -1,12 +1,14 @@
 "use client";
 
-import { FormEvent, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { FormEvent, useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import "./login.css";
 
 export default function LoginPage() {
-  const searchParams = useSearchParams();
+  const [callbackError, setCallbackError] = useState(false);
+  useEffect(() => {
+    setCallbackError(new URLSearchParams(window.location.search).get("error") === "auth_callback");
+  }, []);
   const [mode, setMode] = useState<"signin" | "signup">("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -45,7 +47,7 @@ export default function LoginPage() {
         });
         if (signInError) throw signInError;
 
-        const requestedNext = searchParams.get("next");
+        const requestedNext = new URLSearchParams(window.location.search).get("next");
         const safeNext = requestedNext?.startsWith("/") && !requestedNext.startsWith("//") ? requestedNext : "/";
         window.location.assign(safeNext);
         return;
@@ -73,7 +75,7 @@ export default function LoginPage() {
           <input id="password" type="password" autoComplete={mode === "signin" ? "current-password" : "new-password"} minLength={8} required value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Не менее 8 символов" />
           {error && <div className="auth-error" role="alert">{error}</div>}
           {message && <div className="auth-success" role="status">{message}</div>}
-          {searchParams.get("error") === "auth_callback" && <div className="auth-error" role="alert">Не удалось подтвердить вход. Попробуй запросить ссылку ещё раз.</div>}
+          {callbackError && <div className="auth-error" role="alert">Не удалось подтвердить вход. Попробуй запросить ссылку ещё раз.</div>}
           <button className="auth-submit" type="submit" disabled={busy}>{busy ? "Подожди..." : mode === "signin" ? "Войти" : "Зарегистрироваться"}</button>
         </form>
         <div className="auth-switch">
