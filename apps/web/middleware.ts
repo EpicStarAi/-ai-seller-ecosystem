@@ -34,16 +34,15 @@ export async function middleware(request: NextRequest) {
   const isAuthCallback = request.nextUrl.pathname.startsWith("/auth/callback");
 
   if (!authenticated && !isLogin && !isAuthCallback) {
-    const loginUrl = request.nextUrl.clone();
-    loginUrl.pathname = "/login";
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || request.nextUrl.origin;
+    const loginUrl = new URL("/login", siteUrl);
     loginUrl.searchParams.set("next", request.nextUrl.pathname);
     return NextResponse.redirect(loginUrl);
   }
 
   if (authenticated && isLogin) {
-    const destination = request.nextUrl.clone();
-    destination.pathname = "/";
-    destination.search = "";
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || request.nextUrl.origin;
+    const destination = new URL("/", siteUrl);
     return NextResponse.redirect(destination);
   }
 
