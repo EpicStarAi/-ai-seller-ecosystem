@@ -1,9 +1,17 @@
 name: CI
 on:
   push:
-    branches: [main]
+    branches: [main, feature/identity-tenancy, feature/web-workspace]
+    paths:
+      - "apps/api/**"
+      - "infra/postgres/**"
+      - ".github/workflows/ci.yml"
   pull_request:
-    branches: [main]
+    branches: [main, feature/identity-tenancy]
+    paths:
+      - "apps/api/**"
+      - "infra/postgres/**"
+      - ".github/workflows/ci.yml"
 permissions:
   contents: read
 jobs:
