@@ -17,6 +17,7 @@ Open http://localhost:3000.
 
 Set these public variables in `.env.local` and the production service environment:
 
+- `NEXT_PUBLIC_SITE_URL` (`https://seller.puseta.website` in production)
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
 
