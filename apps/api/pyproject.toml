@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ai-seller-ecosystem-api"
-version = "0.1.0"
+version = "0.2.0"
 description = "API foundation for AI Seller Ecosystem"
 requires-python = ">=3.12"
 dependencies = [
@@ -14,6 +14,8 @@ dependencies = [
   "SQLAlchemy>=2.0,<3.0",
   "psycopg[binary]>=3.2,<4.0",
   "PyJWT[crypto]>=2.9,<3.0",
+  "httpx>=0.27,<1.0",
+  "cryptography>=44,<47",
 ]
 
 [project.optional-dependencies]
