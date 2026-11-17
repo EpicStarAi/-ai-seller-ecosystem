@@ -21,7 +21,7 @@ export async function POST(request:Request){
  if(!organizationId)return NextResponse.json({error:"Рабочее пространство не найдено."},{status:409});
  let body:any;try{body=await request.json();}catch{return NextResponse.json({error:"Некорректный JSON."},{status:400});}
  const name=typeof body.name==="string"?body.name.trim():"";const def=body.definition;
- if(!name||name.length>100||!def||typeof def!=="object"||typeof def.role!=="string"||typeof def.instructions!=="string"||!["ollama","openai","anthropic"].includes(def.provider)||typeof def.model!=="string")return NextResponse.json({error:"Проверьте название и конфигурацию агента."},{status:422});
+ if(!name||name.length>100||!def||typeof def!=="object"||typeof def.role!=="string"||typeof def.instructions!=="string"||!["ollama","openai","anthropic","gemini"].includes(def.provider)||typeof def.model!=="string")return NextResponse.json({error:"Проверьте название и конфигурацию агента."},{status:422});
  const {data:agent,error}=await db.from("agents").insert({organization_id:organizationId,name,status:"draft"}).select("id,name,status").single();
  if(error||!agent)return NextResponse.json({error:"Не удалось создать агента."},{status:500});
  const {error:versionError}=await db.from("agent_versions").insert({organization_id:organizationId,agent_id:agent.id,version:1,definition:{role:def.role,provider:def.provider,model:def.model,instructions:def.instructions},policy:{}});

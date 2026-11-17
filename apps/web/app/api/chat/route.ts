@@ -30,7 +30,7 @@ export async function POST(request: Request) {
   const { data: { user }, error: authError } = await supabase.auth.getUser();
   if (authError || !user) return NextResponse.json({ error: "Требуется авторизация." }, { status: 401 });
 
-  let body: { provider?: string; organizationId?: string; messages?: ChatMessage[]; systemPrompt?: string };
+  let body: { provider?: string; organizationId?: string; messages?: ChatMessage[]; systemPrompt?: string; model?: string };
   try {
     body = await request.json();
   } catch {
@@ -88,7 +88,10 @@ export async function POST(request: Request) {
   }
   }
 
-  const model = models[provider];
+  const requestedModel = typeof body.model === "string" && /^[a-zA-Z0-9._:-]{1,100}$/.test(body.model)
+    ? body.model
+    : "";
+  const model = requestedModel || models[provider];
   let endpoint: string;
   let headers: Record<string, string>;
   let payload: Record<string, unknown>;
@@ -119,7 +122,7 @@ export async function POST(request: Request) {
       messages: safeMessages.map(({ role, content }) => ({ role, content })),
     };
   } else {
-    endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+    endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
     headers = { "x-goog-api-key": secret };
     payload = {
       ...(systemPrompt ? { systemInstruction: { parts: [{ text: systemPrompt }] } } : {}),

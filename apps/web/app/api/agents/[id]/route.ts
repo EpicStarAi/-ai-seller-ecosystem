@@ -8,7 +8,7 @@ export async function PATCH(request:Request,{params}:Ctx){
  const {db,user,organizationId}=await getContext();if(!user)return NextResponse.json({error:"Требуется авторизация."},{status:401});const {id}=await params;
  let body:any;try{body=await request.json();}catch{return NextResponse.json({error:"Некорректный JSON."},{status:400});}
  const name=typeof body.name==="string"?body.name.trim():"";const d=body.definition;
- if(!name||name.length>100||!d||typeof d.role!=="string"||typeof d.instructions!=="string"||!["ollama","openai","anthropic"].includes(d.provider)||typeof d.model!=="string")return NextResponse.json({error:"Проверьте конфигурацию."},{status:422});
+ if(!name||name.length>100||!d||typeof d.role!=="string"||typeof d.instructions!=="string"||!["ollama","openai","anthropic","gemini"].includes(d.provider)||typeof d.model!=="string")return NextResponse.json({error:"Проверьте конфигурацию."},{status:422});
  const {data:agent,error}=await db.from("agents").update({name}).eq("id",id).eq("organization_id",organizationId).select("id,name,status").maybeSingle();
  if(error||!agent)return NextResponse.json({error:"Агент не найден или нет доступа."},{status:404});
  const {data:versions}=await db.from("agent_versions").select("version").eq("agent_id",id).eq("organization_id",organizationId).order("version",{ascending:false}).limit(1);
