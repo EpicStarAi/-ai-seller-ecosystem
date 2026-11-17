@@ -192,7 +192,7 @@ async def connect_integration(
         if existing:
             integration_id = existing["id"]
             secret_row = db.execute(text("""
-                INSERT INTO private.integration_secrets
+                INSERT INTO public.integration_secrets
                   (id, organization_id, integration_id, nonce, ciphertext, key_version)
                 VALUES (:id, :org, :integration, :nonce, :ciphertext, 1)
                 ON CONFLICT (integration_id) DO UPDATE
@@ -224,7 +224,7 @@ async def connect_integration(
                    "label": (payload.label or verified["label"]).strip()[:120],
                    "metadata": json.dumps(verified["metadata"])})
             db.execute(text("""
-                INSERT INTO private.integration_secrets
+                INSERT INTO public.integration_secrets
                   (id, organization_id, integration_id, nonce, ciphertext, key_version)
                 VALUES (:id, :org, :integration, :nonce, :ciphertext, 1)
             """), {"id": secret_id, "org": org_id, "integration": integration_id,
@@ -257,7 +257,7 @@ async def test_integration(
         _authorize(db, principal, org_id)
         row = db.execute(text("""
             SELECT i.id, s.nonce, s.ciphertext FROM integrations i
-            JOIN private.integration_secrets s ON s.integration_id=i.id
+            JOIN public.integration_secrets s ON s.integration_id=i.id
             WHERE i.organization_id=:org AND i.kind=:provider ORDER BY i.created_at LIMIT 1
         """), {"org": org_id, "provider": provider}).mappings().first()
         if row is None:
