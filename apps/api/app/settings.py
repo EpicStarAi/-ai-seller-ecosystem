@@ -11,6 +11,8 @@ class Settings(BaseSettings):
     auth_jwks_url: str = ""
     auth_issuer: str = ""
     auth_audience: str = ""
+    anthropic_api_key: str = ""
+    claude_default_model: str = "claude-sonnet-5-5"
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
