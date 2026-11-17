@@ -1,13 +1,13 @@
 name: CI
 on:
   push:
-    branches: [main, feature/identity-tenancy, feature/web-workspace]
+    branches: [main, feature/identity-tenancy, feature/web-workspace, feature/claude-ai-gateway]
     paths:
       - "apps/api/**"
       - "infra/postgres/**"
       - ".github/workflows/ci.yml"
   pull_request:
-    branches: [main, feature/identity-tenancy]
+    branches: [main, feature/identity-tenancy, feature/web-workspace]
     paths:
       - "apps/api/**"
       - "infra/postgres/**"
