@@ -22,3 +22,12 @@
 .integration-actions .danger{color:#e58b8b}
 .spin{animation:integration-spin 1s linear infinite}
 @keyframes integration-spin{to{transform:rotate(360deg)}}
+
+.chat-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:0 2px 10px;border-bottom:1px solid var(--line)}
+.chat-provider-status{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:10px;overflow-wrap:anywhere}
+.chat-provider-status>span{width:7px;height:7px;border-radius:50%;background:var(--green);flex-shrink:0}
+.chat-toolbar button:disabled{opacity:.4;cursor:not-allowed}
+.typing{display:flex;align-items:center;gap:8px;color:#9fb7e5}
+.chat-error{margin:8px 0 0}
+.bubble p{white-space:pre-wrap;overflow-wrap:anywhere}
+@media(max-width:700px){.chat-toolbar{align-items:flex-start}.chat-provider-status{font-size:9px}}
