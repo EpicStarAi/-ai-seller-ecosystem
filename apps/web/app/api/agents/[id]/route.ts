@@ -4,6 +4,14 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 type Ctx={params:Promise<{id:string}>};
 async function getContext(){const db=await createClient();const {data:{user},error}=await db.auth.getUser();if(error||!user)return {db,user:null,organizationId:""};const {data:m}=await db.from("memberships").select("organization_id").eq("user_id",user.id).limit(1).maybeSingle();return {db,user,organizationId:m?.organization_id||""};}
+export async function GET(_request:Request,{params}:Ctx){
+ const {db,user,organizationId}=await getContext();if(!user)return NextResponse.json({error:"Требуется авторизация."},{status:401});const {id}=await params;
+ const {data:agent,error}=await db.from("agents").select("id,name,status,created_at").eq("id",id).eq("organization_id",organizationId).maybeSingle();
+ if(error||!agent)return NextResponse.json({error:"Агент не найден."},{status:404});
+ const {data:version,error:versionError}=await db.from("agent_versions").select("id,version,definition,policy,created_at").eq("agent_id",id).eq("organization_id",organizationId).order("version",{ascending:false}).limit(1).maybeSingle();
+ if(versionError)return NextResponse.json({error:"Не удалось загрузить конфигурацию."},{status:500});
+ return NextResponse.json({agent:{...agent,version:version?.version||0,definition:version?.definition||{},policy:version?.policy||{}}});
+}
 export async function PATCH(request:Request,{params}:Ctx){
  const {db,user,organizationId}=await getContext();if(!user)return NextResponse.json({error:"Требуется авторизация."},{status:401});const {id}=await params;
  let body:any;try{body=await request.json();}catch{return NextResponse.json({error:"Некорректный JSON."},{status:400});}

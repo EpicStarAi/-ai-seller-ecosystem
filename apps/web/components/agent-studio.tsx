@@ -106,17 +106,21 @@ export default function AgentStudio() {
     if (!selected) return;
     if (!task.trim()) { setError("Введите задачу для агента."); return; }
     setRunning(true); setError(""); setResult("");
-    let organizationId = "";
     try {
+      const savedResponse = await fetch("/api/agents/" + selected.id, { cache: "no-store" });
+      const savedData = await savedResponse.json();
+      if (!savedResponse.ok) throw Error(savedData.error || "Не удалось загрузить сохранённую конфигурацию.");
+      const saved = savedData.agent;
+      const def = saved.definition || {};
+      if (!def.provider || !def.model || !def.role || !def.instructions) throw Error("Сначала сохраните полную конфигурацию агента.");
       const bootResponse = await fetch("/api/bootstrap", { method: "POST" });
       const boot = await bootResponse.json();
       if (!bootResponse.ok || !boot.organizationId) throw Error(boot.error || "Не найдено рабочее пространство.");
-      organizationId = boot.organizationId;
       const r = await fetch("/api/chat", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          provider, model, organizationId,
-          systemPrompt: "Роль: " + role + "\n" + instructions,
+          provider: def.provider, model: def.model, organizationId: boot.organizationId,
+          systemPrompt: "Роль: " + def.role + String.fromCharCode(10) + def.instructions,
           messages: [{ role: "user", content: task.trim() }]
         })
       });
@@ -125,7 +129,7 @@ export default function AgentStudio() {
       setResult(d.answer || "");
       const log = await fetch("/api/agents/" + selected.id + "/runs", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: "succeeded", provider, result: { answer: d.answer || "" } })
+        body: JSON.stringify({ status: "succeeded", provider: def.provider, result: { answer: d.answer || "", version: saved.version } })
       });
       if (!log.ok) setError("Ответ получен, но запись истории запуска не сохранилась.");
       await loadRuns(selected.id);
