@@ -4,6 +4,7 @@ import base64
 import json
 import os
 import re
+from pathlib import Path
 from typing import Annotated, Any
 from uuid import UUID, uuid4
 
@@ -76,6 +77,11 @@ def _require_admin(role: str) -> None:
 
 def _key() -> bytes:
     value = settings.integration_encryption_key.strip()
+    if not value and settings.integration_encryption_key_file:
+        try:
+            value = Path(settings.integration_encryption_key_file).read_text(encoding="utf-8").strip()
+        except OSError:
+            value = ""
     if not value:
         raise HTTPException(503, "Integration secret storage is not configured")
     try:
