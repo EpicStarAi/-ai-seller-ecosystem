@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { Check, CircleAlert, LoaderCircle, PlugZap, RefreshCw, ShieldCheck, Trash2, X } from "lucide-react";
 
 type Provider = "telegram" | "openai" | "anthropic" | "gemini";
@@ -58,7 +58,7 @@ export default function IntegrationsPanel() {
     return () => { active = false; };
   }, [refresh]);
 
-  async function connect(event: React.FormEvent) {
+  async function connect(event: FormEvent) {
     event.preventDefault();
     if (!selected || !secret.trim() || !organizationId) return;
     setBusy(selected);
