@@ -3,17 +3,18 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { LoaderCircle, Send, Sparkles, Trash2 } from "lucide-react";
 
-type Provider = "openai" | "anthropic" | "gemini";
+type Provider = "ollama" | "openai" | "anthropic" | "gemini";
 type Message = { role: "user" | "assistant"; content: string };
 
 const providerLabels: Record<Provider, string> = {
+  ollama: "Ollama Qwen",
   openai: "OpenAI · GPT",
   anthropic: "Claude",
   gemini: "Gemini",
 };
 
 export default function AIChat() {
-  const [provider, setProvider] = useState<Provider>("openai");
+  const [provider, setProvider] = useState<Provider>("ollama");
   const [organizationId, setOrganizationId] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
@@ -70,6 +71,7 @@ export default function AIChat() {
     <div className="panel-head">
       <div><h2>AI Assistant</h2><p>Единый чат через серверный AI Gateway. API-ключи остаются на сервере.</p></div>
       <select value={provider} disabled={busy} onChange={(event) => { setProvider(event.target.value as Provider); setModel(""); }}>
+        <option value="ollama">Локальная модель · Ollama (Qwen 3.5 9B)</option>
         <option value="openai">OpenAI · GPT</option>
         <option value="anthropic">Claude</option>
         <option value="gemini">Gemini</option>
@@ -80,7 +82,7 @@ export default function AIChat() {
       <button className="text-button" disabled={!messages.length || busy} onClick={() => { setMessages([]); setError(""); setModel(""); }}><Trash2 size={14}/> Очистить</button>
     </div>
     <div className="chat-messages" ref={listRef}>
-      {messages.length === 0 ? <div className="empty-state"><Sparkles size={26}/><b>Начни диалог с AI</b><span>Выбери модель и отправь сообщение. Для работы нужен активный API credential в разделе «Интеграции».</span></div> :
+      {messages.length === 0 ? <div className="empty-state"><Sparkles size={26}/><b>Начни диалог с AI</b><span>Выбери модель и отправь сообщение. Для облачных моделей нужен API credential. Локальная Ollama работает без внешнего API-ключа.</span></div> :
         messages.map((message, index) => <div className={message.role === "user" ? "bubble user" : "bubble"} key={index}><small>{message.role === "user" ? "Вы" : providerLabels[provider]}</small><p>{message.content}</p></div>)}
       {busy && <div className="bubble"><small>{providerLabels[provider]}</small><p className="typing"><LoaderCircle className="spin" size={14}/> Генерирую ответ…</p></div>}
     </div>

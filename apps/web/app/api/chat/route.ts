@@ -5,10 +5,11 @@ import { decryptIntegrationSecret } from "@/lib/integrations/crypto";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-type ChatProvider = "openai" | "anthropic" | "gemini";
+type ChatProvider = "ollama" | "openai" | "anthropic" | "gemini";
 type ChatMessage = { role: "user" | "assistant"; content: string };
 
 const models: Record<ChatProvider, string> = {
+  ollama: process.env.OLLAMA_MODEL || "qwen3.5:9b",
   openai: "gpt-6-astra",
   anthropic: "claude-sonnet-5-5",
   gemini: "gemini-3.8-flash",
@@ -38,7 +39,7 @@ export async function POST(request: Request) {
 
   const provider = body.provider as ChatProvider;
   const organizationId = typeof body.organizationId === "string" ? body.organizationId : "";
-  if (!["openai", "anthropic", "gemini"].includes(provider)) {
+  if (!["ollama", "openai", "anthropic", "gemini"].includes(provider)) {
     return NextResponse.json({ error: "Выбранный AI-провайдер не поддерживается." }, { status: 400 });
   }
   if (!organizationId) return NextResponse.json({ error: "Не указано рабочее пространство." }, { status: 400 });
@@ -65,6 +66,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Нет доступа к этому рабочему пространству." }, { status: 403 });
   }
 
+  let secret = "";
+  if (provider !== "ollama") {
   const { data: integration, error: integrationError } = await supabase.from("integrations")
     .select("id,status").eq("organization_id", organizationId).eq("kind", provider).maybeSingle();
   if (integrationError || !integration || integration.status !== "connected") {
@@ -77,11 +80,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Сохранённый credential не найден. Переподключите провайдера." }, { status: 409 });
   }
 
-  let secret: string;
   try {
     secret = decryptIntegrationSecret(stored.nonce, stored.ciphertext, organizationId, provider);
   } catch {
     return NextResponse.json({ error: "Не удалось расшифровать credential. Проверьте серверный ключ шифрования." }, { status: 500 });
+  }
   }
 
   const model = models[provider];
@@ -89,7 +92,12 @@ export async function POST(request: Request) {
   let headers: Record<string, string>;
   let payload: Record<string, unknown>;
 
-  if (provider === "openai") {
+  if (provider === "ollama") {
+    const ollamaBaseUrl = process.env.OLLAMA_BASE_URL || "http://127.0.0.1:11435";
+    endpoint = `${ollamaBaseUrl.replace(/\/+$/, "")}/api/chat`;
+    headers = {};
+    payload = { model, messages: safeMessages, stream: false, think: false, options: { num_predict: 1600, num_ctx: 8192 } };
+  } else if (provider === "openai") {
     endpoint = "https://api.openai.com/v1/responses";
     headers = { Authorization: `Bearer ${secret}` };
     payload = {
@@ -127,7 +135,7 @@ export async function POST(request: Request) {
       body: JSON.stringify(payload),
       cache: "no-store",
       redirect: "error",
-      signal: AbortSignal.timeout(60000),
+      signal: AbortSignal.timeout(provider === "ollama" ? 180000 : 60000),
     });
     const result = await response.json() as Record<string, unknown>;
     if (!response.ok) {
@@ -143,7 +151,12 @@ export async function POST(request: Request) {
     }
 
     let answer = "";
-    if (provider === "openai") {
+    if (provider === "ollama") {
+      const message = result.message;
+      if (message && typeof message === "object" && typeof (message as Record<string, unknown>).content === "string") {
+        answer = (message as Record<string, string>).content;
+      }
+    } else if (provider === "openai") {
       if (typeof result.output_text === "string") answer = result.output_text;
       else if (Array.isArray(result.output)) {
         answer = result.output.flatMap((item) => {
