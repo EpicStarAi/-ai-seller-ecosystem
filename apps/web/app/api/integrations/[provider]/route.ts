@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { decryptIntegrationSecret } from "@/lib/integrations/crypto";
-import { IntegrationProvider, verifyProvider } from "@/lib/integrations/providers";
+import { verifyProvider, type IntegrationProvider } from "@/lib/integrations/providers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
