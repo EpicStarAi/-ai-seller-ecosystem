@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 
+from app.ai import router as ai_router
 from app.organizations import router as organizations_router
 from app.settings import settings
 
@@ -10,6 +11,7 @@ app = FastAPI(
 )
 
 app.include_router(organizations_router)
+app.include_router(ai_router)
 
 
 @app.get("/health", tags=["system"])
