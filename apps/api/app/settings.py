@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     auth_issuer: str = ""
     auth_audience: str = "authenticated"
     integration_encryption_key: str = ""
+    integration_encryption_key_file: str = ""
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
