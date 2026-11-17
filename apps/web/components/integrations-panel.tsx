@@ -126,7 +126,7 @@ export default function IntegrationsPanel() {
 
   return <section className="panel">
     <div className="panel-head">
-      <div><h2>Подключения сервисов</h2><p>Реальные проверки credentials через сервер. Секреты не передаются в браузер повторно и не выводятся в интерфейсе.</p></div>
+      <div><h2>Подключения сервисов</h2><p>Проверяем доступность ключей через сервер. Проверка ключа не подтверждает наличие средств или доступность платной генерации.</p></div>
       <span className="pill muted">{integrations.length} подключено</span>
     </div>
     {error && <div className="integration-alert error"><CircleAlert size={16}/><span>{error}</span><button onClick={() => setError("")} aria-label="Закрыть"><X size={14}/></button></div>}
@@ -154,9 +154,10 @@ export default function IntegrationsPanel() {
           <b>{provider.name}</b>
           <p>{provider.description}</p>
           <span className={connected?.status === "connected" ? "pill success" : connected?.status === "error" ? "pill warning" : "pill muted"}>
-            {connected?.status === "connected" ? "Подключено" : connected?.status === "error" ? "Ошибка проверки" : "Не подключено"}
+            {connected?.status === "connected" ? (provider.id === "telegram" ? "Подключено" : "Ключ принят · баланс неизвестен") : connected?.status === "error" ? "Ошибка проверки" : "Не подключено"}
           </span>
           {connected?.label && <small>{connected.label}</small>}
+          {connected && provider.id !== "telegram" && connected.status === "connected" && <small className="integration-billing-note">Баланс API не проверяется. При нулевом балансе генерация может быть отклонена провайдером.</small>}
           {connected?.last_tested_at && <small>Проверено: {new Date(connected.last_tested_at).toLocaleString("ru-RU")}</small>}
           {connected ? <div className="integration-actions">
             <button className="secondary" disabled={isBusy} onClick={() => test(provider.id)}>{isBusy ? <LoaderCircle className="spin" size={14}/> : <RefreshCw size={14}/>} Проверить</button>

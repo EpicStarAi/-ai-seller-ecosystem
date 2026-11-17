@@ -144,12 +144,15 @@ export async function POST(request: Request) {
     if (!response.ok) {
       const providerMessage = extractProviderError(result);
       const status = response.status === 429 ? 429 : 502;
+      const billingMessage = response.status === 402
+        ? "Провайдер отклонил запрос: недостаточно средств или исчерпана оплаченная квота API."
+        : response.status === 429
+          ? "Провайдер ограничил запрос: превышен rate limit или квота. Это не обязательно означает нулевой баланс."
+          : null;
       return NextResponse.json({
-        error: response.status === 429
-          ? "Лимит запросов провайдера достигнут. Проверьте квоту или биллинг."
-          : providerMessage
-            ? `Провайдер отклонил запрос: ${providerMessage.slice(0, 300)}`
-            : "AI-провайдер не смог обработать запрос. Проверьте модель, ключ и доступ к API.",
+        error: billingMessage ?? (providerMessage
+          ? `Провайдер отклонил запрос: ${providerMessage.slice(0, 300)}`
+          : "AI-провайдер не смог обработать запрос. Проверьте модель, ключ и доступ к API."),
       }, { status });
     }
 

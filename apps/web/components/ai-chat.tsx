@@ -77,6 +77,9 @@ export default function AIChat() {
         <option value="gemini">Gemini</option>
       </select>
     </div>
+    {provider !== "ollama" && <div className="integration-alert warning chat-billing-warning">
+      Облачный API может тарифицировать запросы. Баланс заранее не проверяется; при нулевом балансе провайдер может отклонить запрос. Для бесплатного тестирования используй Ollama.
+    </div>}
     <div className="chat-toolbar">
       <span className="chat-provider-status"><span/> {providerLabels[provider]} {model ? `· ${model}` : "· готов к запросу"}</span>
       <button className="text-button" disabled={!messages.length || busy} onClick={() => { setMessages([]); setError(""); setModel(""); }}><Trash2 size={14}/> Очистить</button>
