@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
+import { randomUUID } from "node:crypto";
 import { createClient } from "@/lib/supabase/server";
 import { encryptIntegrationSecret } from "@/lib/integrations/crypto";
-import { IntegrationProvider, verifyProvider } from "@/lib/integrations/providers";
+import { verifyProvider, type IntegrationProvider } from "@/lib/integrations/providers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -79,7 +80,7 @@ export async function POST(request: Request) {
 
   const { data: existing } = await supabase.from("integrations").select("id")
     .eq("organization_id", organizationId).eq("kind", provider).limit(1).maybeSingle();
-  const secretId = crypto.randomUUID();
+  const secretId = randomUUID();
   let integrationId = existing?.id as string | undefined;
 
   if (integrationId) {
@@ -104,7 +105,7 @@ export async function POST(request: Request) {
     }).eq("id", integrationId).eq("organization_id", organizationId);
     if (updateError) return NextResponse.json({ error: "Credential сохранён, но метаданные интеграции не обновились." }, { status: 500 });
   } else {
-    integrationId = crypto.randomUUID();
+    integrationId = randomUUID();
     const { error: insertError } = await supabase.from("integrations").insert({
       id: integrationId,
       organization_id: organizationId,
