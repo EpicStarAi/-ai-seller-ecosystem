@@ -37,7 +37,7 @@ def verify_access_token(token: str) -> Principal:
         claims = jwt.decode(
             token,
             signing_key.key,
-            algorithms=["RS256"],
+            algorithms=["RS256", "ES256"],
             issuer=settings.auth_issuer,
             audience=settings.auth_audience,
             options={"require": ["exp", "iat", "iss", "aud", "sub"]},

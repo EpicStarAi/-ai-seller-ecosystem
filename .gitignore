@@ -15,3 +15,6 @@ build/
 coverage.xml
 htmlcov/
 .DS_Store
+
+# TypeScript incremental compiler cache
+*.tsbuildinfo
