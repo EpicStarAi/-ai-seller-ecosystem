@@ -30,7 +30,7 @@ export async function POST(request: Request) {
   const { data: { user }, error: authError } = await supabase.auth.getUser();
   if (authError || !user) return NextResponse.json({ error: "Требуется авторизация." }, { status: 401 });
 
-  let body: { provider?: string; organizationId?: string; messages?: ChatMessage[] };
+  let body: { provider?: string; organizationId?: string; messages?: ChatMessage[]; systemPrompt?: string };
   try {
     body = await request.json();
   } catch {
@@ -42,6 +42,7 @@ export async function POST(request: Request) {
   if (!["ollama", "openai", "anthropic", "gemini"].includes(provider)) {
     return NextResponse.json({ error: "Выбранный AI-провайдер не поддерживается." }, { status: 400 });
   }
+  const systemPrompt = typeof body.systemPrompt === "string" ? body.systemPrompt.slice(0, 12000) : "";
   if (!organizationId) return NextResponse.json({ error: "Не указано рабочее пространство." }, { status: 400 });
 
   const messages = Array.isArray(body.messages) ? body.messages : [];
@@ -96,13 +97,13 @@ export async function POST(request: Request) {
     const ollamaBaseUrl = process.env.OLLAMA_BASE_URL || "http://127.0.0.1:11435";
     endpoint = `${ollamaBaseUrl.replace(/\/+$/, "")}/api/chat`;
     headers = {};
-    payload = { model, messages: safeMessages, stream: false, think: false, options: { num_predict: 1600, num_ctx: 8192 } };
+    payload = { model, messages: [...(systemPrompt ? [{ role: "system", content: systemPrompt }] : []), ...safeMessages], stream: false, think: false, options: { num_predict: 1600, num_ctx: 8192 } };
   } else if (provider === "openai") {
     endpoint = "https://api.openai.com/v1/responses";
     headers = { Authorization: `Bearer ${secret}` };
     payload = {
       model,
-      input: safeMessages.map((message) => ({
+      input: [...(systemPrompt ? [{ role: "developer", content: systemPrompt }] : []), ...safeMessages].map((message) => ({
         role: message.role,
         content: message.content,
       })),
@@ -114,12 +115,14 @@ export async function POST(request: Request) {
     payload = {
       model,
       max_tokens: 1600,
+      ...(systemPrompt ? { system: systemPrompt } : {}),
       messages: safeMessages.map(({ role, content }) => ({ role, content })),
     };
   } else {
     endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
     headers = { "x-goog-api-key": secret };
     payload = {
+      ...(systemPrompt ? { systemInstruction: { parts: [{ text: systemPrompt }] } } : {}),
       contents: safeMessages.map(({ role, content }) => ({
         role: role === "assistant" ? "model" : "user",
         parts: [{ text: content }],

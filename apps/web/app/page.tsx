@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import IntegrationsPanel from "@/components/integrations-panel";
 import AIChat from "@/components/ai-chat";
+import AgentStudio from "@/components/agent-studio";
 import {
   Activity, Bot, Boxes, BrainCircuit, ChartNoAxesCombined, Check, ChevronDown,
   ChevronRight, CircleHelp, Command, ContactRound, CreditCard, FileText, GitBranch,
@@ -42,17 +43,12 @@ const descriptions: Record<Section, string> = {
   "Настройки": "Параметры профиля и рабочего пространства."
 };
 
-const initialAgents = [
-  { name: "Lead Researcher", role: "Исследование и квалификация лидов", model: "OpenAI", status: "Черновик" },
-  { name: "Content Strategist", role: "Контент и маркетинговые идеи", model: "Claude", status: "Черновик" },
-  { name: "Sales Assistant", role: "Помощь в обработке обращений", model: "Gemini", status: "Черновик" }
-];
-
 export default function Home() {
   const [active, setActive] = useState<Section>("Обзор");
   const [mobileOpen, setMobileOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const [agents, setAgents] = useState(initialAgents);
+  const [agents, setAgents] = useState<any[]>([]);
+  useEffect(() => { fetch("/api/agents", { cache: "no-store" }).then(r => r.json()).then(d => setAgents(d.agents || [])).catch(() => setAgents([])); }, []);
   const [showAgentForm, setShowAgentForm] = useState(false);
   const [agentName, setAgentName] = useState("");
   const [agentRole, setAgentRole] = useState("");
@@ -73,13 +69,6 @@ export default function Home() {
     setMessage("");
   }
 
-  function addAgent() {
-    if (!agentName.trim()) return;
-    setAgents((old) => [...old, { name: agentName.trim(), role: agentRole.trim() || "Новая роль", model: provider, status: "Черновик" }]);
-    setAgentName(""); setAgentRole(""); setShowAgentForm(false);
-    setNotice("Агент добавлен в демонстрационный список.");
-  }
-
   function addContact() {
     if (!newContact.trim()) return;
     setContacts((old) => [...old, newContact.trim()]);
@@ -90,7 +79,7 @@ export default function Home() {
   function content() {
     if (active === "Обзор") return <Dashboard setActive={setActive} agents={agents.length} />;
     if (active === "AI Assistant") return <AIChat />;
-    if (active === "AI Agent Studio") return <section className="panel"><div className="panel-head"><div><h2>AI Agent Studio</h2><p>Конфигурации агентов. Реальное выполнение подключим через Backend.</p></div><button className="primary" onClick={() => setShowAgentForm(true)}><Plus size={16}/> Создать агента</button></div><div className="agent-grid">{agents.map((a, i) => <article className="agent-card" key={a.name + i}><div className="agent-icon"><Bot/></div><div className="agent-title"><b>{a.name}</b><span className="pill muted">{a.status}</span></div><p>{a.role}</p><div className="card-foot"><span>{a.model}</span><button className="text-button" onClick={() => setNotice("Редактирование агента будет подключено в следующем этапе.")}>Настроить <ChevronRight size={14}/></button></div></article>)}</div>{showAgentForm && <Modal title="Новый AI-агент" onClose={() => setShowAgentForm(false)}><label>Название<input value={agentName} onChange={(e) => setAgentName(e.target.value)} placeholder="Например, Lead Qualifier"/></label><label>Роль<input value={agentRole} onChange={(e) => setAgentRole(e.target.value)} placeholder="Что должен делать агент?"/></label><label>AI-провайдер<select value={provider} onChange={(e) => setProvider(e.target.value)}><option>OpenAI</option><option>Claude</option><option>Gemini</option></select></label><button className="primary full" onClick={addAgent}>Сохранить агента</button></Modal>}</section>;
+    if (active === "AI Agent Studio") return <AgentStudio />;
     if (active === "CRM") return <section className="panel"><div className="panel-head"><div><h2>CRM · Контакты</h2><p>Демонстрационные записи, не реальные клиенты.</p></div><button className="primary" onClick={() => setShowContactForm(true)}><Plus size={16}/> Добавить контакт</button></div><div className="toolbar"><div className="searchbox"><Search size={16}/><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Поиск контактов"/></div><span className="pill muted">{filteredContacts.length} контакта</span></div><div className="contact-list">{filteredContacts.map((name, i) => <div className="contact-row" key={name}><div className="avatar">{name.split(" ").map((x) => x[0]).join("").slice(0,2)}</div><div><b>{name}</b><small>Демо-контакт · статус не задан</small></div><span className="pill muted">Новый</span></div>)}</div>{showContactForm && <Modal title="Добавить контакт" onClose={() => setShowContactForm(false)}><label>Имя или название<input value={newContact} onChange={(e) => setNewContact(e.target.value)} placeholder="Имя контакта"/></label><button className="primary full" onClick={addContact}>Добавить</button></Modal>}</section>;
     if (active === "Автоматизация") return <section className="panel"><div className="panel-head"><div><h2>Автоматизация</h2><p>Переключатели демонстрационные: процессы не запускаются.</p></div><span className="pill warning">Demo</span></div><div className="flow-list">{["Новый лид → уведомление","Новый диалог → классификация","Еженедельный отчёт"].map((name, i) => <div className="flow-row" key={name}><div className="flow-symbol"><Workflow size={18}/></div><div className="flow-name"><b>{name}</b><small>Локальный макет workflow</small></div><button className={enabledFlows[i] ? "toggle on" : "toggle"} onClick={() => setEnabledFlows((old) => old.map((v, j) => j === i ? !v : v))}>{enabledFlows[i] ? "Вкл." : "Выкл."}</button></div>)}</div></section>;
     if (active === "Интеграции") return <IntegrationsPanel />;
