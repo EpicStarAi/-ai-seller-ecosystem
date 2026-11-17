@@ -131,6 +131,20 @@ export default function IntegrationsPanel() {
     </div>
     {error && <div className="integration-alert error"><CircleAlert size={16}/><span>{error}</span><button onClick={() => setError("")} aria-label="Закрыть"><X size={14}/></button></div>}
     {notice && <div className="integration-alert success"><Check size={16}/><span>{notice}</span><button onClick={() => setNotice("")} aria-label="Закрыть"><X size={14}/></button></div>}
+    {selected && <form id="integration-connect-form" className="integration-connect-form" onSubmit={connect}>
+      <div className="panel-head">
+        <div><h3>Подключить {providers.find((p) => p.id === selected)?.name}</h3><p>{providers.find((p) => p.id === selected)?.help}</p></div>
+        <button type="button" className="text-button" onClick={() => { setSelected(null); setSecret(""); }}><X size={16}/> Закрыть</button>
+      </div>
+      <label>API key / bot token
+        <input type="password" value={secret} onChange={(e) => setSecret(e.target.value)} autoComplete="new-password" spellCheck={false} required placeholder={providers.find((p) => p.id === selected)?.placeholder}/>
+      </label>
+      <label>Название подключения (необязательно)
+        <input value={label} onChange={(e) => setLabel(e.target.value)} maxLength={120} placeholder="Например, основной аккаунт"/>
+      </label>
+      <div className="integration-security"><ShieldCheck size={16}/> Credential будет зашифрован AES-256-GCM и сохранён на сервере. Он не попадёт в GitHub или клиентский JavaScript.</div>
+      <button className="primary" type="submit" disabled={!secret.trim() || !!busy}>{busy === selected ? <><LoaderCircle className="spin" size={15}/> Проверяем и сохраняем…</> : "Проверить и подключить"}</button>
+    </form>}
     <div className="integration-grid">
       {providers.map((provider) => {
         const connected = integrations.find((item) => item.kind === provider.id);
@@ -151,19 +165,6 @@ export default function IntegrationsPanel() {
         </article>;
       })}
     </div>
-    {selected && <form className="integration-connect-form" onSubmit={connect}>
-      <div className="panel-head">
-        <div><h3>Подключить {providers.find((p) => p.id === selected)?.name}</h3><p>{providers.find((p) => p.id === selected)?.help}</p></div>
-        <button type="button" className="text-button" onClick={() => { setSelected(null); setSecret(""); }}><X size={16}/> Закрыть</button>
-      </div>
-      <label>API key / bot token
-        <input type="password" value={secret} onChange={(e) => setSecret(e.target.value)} autoComplete="new-password" spellCheck={false} required placeholder={providers.find((p) => p.id === selected)?.placeholder}/>
-      </label>
-      <label>Название подключения (необязательно)
-        <input value={label} onChange={(e) => setLabel(e.target.value)} maxLength={120} placeholder="Например, основной аккаунт"/>
-      </label>
-      <div className="integration-security"><ShieldCheck size={16}/> Credential будет зашифрован AES-256-GCM и сохранён на сервере. Он не попадёт в GitHub или клиентский JavaScript.</div>
-      <button className="primary" type="submit" disabled={!secret.trim() || !!busy}>{busy === selected ? <><LoaderCircle className="spin" size={15}/> Проверяем и сохраняем…</> : "Проверить и подключить"}</button>
-    </form>}
+
   </section>;
 }
