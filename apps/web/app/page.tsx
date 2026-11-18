@@ -2,24 +2,32 @@
 
 import { useEffect, useMemo, useState } from "react";
 import IntegrationsPanel from "@/components/integrations-panel";
+import TelegramChannelsPanel from "@/components/telegram-channels-panel";
+import AutopostingPanel from "@/components/autoposting-panel";
+import DonorManagerPanel from "@/components/donor-manager-panel";
+import FirecrawlSourcesPanel from "@/components/firecrawl-sources-panel";
+import TelegramIntakePanel from "@/components/telegram-intake-panel";
+import TelegramCampaignsPanel from "@/components/telegram-campaigns-panel";
+import ToolsWorkspace from "@/components/tools-workspace";
+import FunnelBuilder from "@/components/funnel-builder";
 import AIChat from "@/components/ai-chat";
 import AgentStudio from "@/components/agent-studio";
 import {
-  Activity, Bot, Boxes, BrainCircuit, ChartNoAxesCombined, Check, ChevronDown,
+  Activity, Bot, Boxes, BrainCircuit, ChartNoAxesCombined, Check, ChevronDown, RadioTower,
   ChevronRight, CircleHelp, Command, ContactRound, CreditCard, FileText, GitBranch,
   LayoutDashboard, Menu, MessageCircle, Plus, Search, Send, Settings, ShieldCheck,
-  Sparkles, Workflow, X, Zap, LogOut
+  Sparkles, Workflow, X, Zap, LogOut, Wrench
 } from "lucide-react";
 
-type Section = "Обзор" | "AI Assistant" | "AI Agent Studio" | "Telegram Workspace" | "Воронки" | "Кампании" | "Контент-студия" | "CRM" | "Автоматизация" | "Интеграции" | "Использование" | "Настройки";
+type Section = "Обзор" | "Инструменты" | "AI Assistant" | "AI Agent Studio" | "Telegram Workspace" | "AI Автопостинг" | "Donor Manager" | "Воронки" | "Кампании" | "Контент-студия" | "CRM" | "Автоматизация" | "Интеграции" | "Использование" | "Настройки";
 
 const nav: { group: string; items: { label: Section; icon: typeof LayoutDashboard }[] }[] = [
   { group: "РАБОЧЕЕ ПРОСТРАНСТВО", items: [
-    { label: "Обзор", icon: LayoutDashboard }, { label: "AI Assistant", icon: BrainCircuit },
+    { label: "Обзор", icon: LayoutDashboard }, { label: "Инструменты", icon: Wrench }, { label: "AI Assistant", icon: BrainCircuit },
     { label: "AI Agent Studio", icon: Bot }, { label: "Telegram Workspace", icon: MessageCircle }
   ]},
   { group: "ПРОДАЖИ И МАРКЕТИНГ", items: [
-    { label: "Воронки", icon: GitBranch }, { label: "Кампании", icon: Send },
+    { label: "Воронки", icon: GitBranch }, { label: "AI Автопостинг", icon: Send }, { label: "Donor Manager", icon: RadioTower }, { label: "Кампании", icon: Send },
     { label: "Контент-студия", icon: FileText }, { label: "CRM", icon: ContactRound }
   ]},
   { group: "СИСТЕМА", items: [
@@ -30,9 +38,12 @@ const nav: { group: string; items: { label: Section; icon: typeof LayoutDashboar
 
 const descriptions: Record<Section, string> = {
   "Обзор": "Сводка по рабочему пространству и быстрый доступ к инструментам.",
+  "Инструменты": "Локальные утилиты для маркетинга, расчётов и Telegram-ссылок.",
   "AI Assistant": "Единая точка работы с несколькими AI-провайдерами.",
   "AI Agent Studio": "Создавай специализированных агентов и управляй их конфигурациями.",
   "Telegram Workspace": "Подключение ботов, входящие сообщения и рабочие диалоги.",
+  "AI Автопостинг": "Настройка потоков контента, AI-обработки и расписаний публикаций.",
+  "Donor Manager": "Telegram-каналы и веб-источники Firecrawl для контентных потоков.",
   "Воронки": "Визуальная схема сценариев привлечения и обработки лидов.",
   "Кампании": "Планирование коммуникаций для согласованных аудиторий.",
   "Контент-студия": "Черновики текстов, идеи и контент-план.",
@@ -80,12 +91,15 @@ export default function Home() {
     if (active === "Обзор") return <Dashboard setActive={setActive} agents={agents.length} />;
     if (active === "AI Assistant") return <AIChat />;
     if (active === "AI Agent Studio") return <AgentStudio />;
+    if (active === "Инструменты") return <ToolsWorkspace />;
     if (active === "CRM") return <section className="panel"><div className="panel-head"><div><h2>CRM · Контакты</h2><p>Демонстрационные записи, не реальные клиенты.</p></div><button className="primary" onClick={() => setShowContactForm(true)}><Plus size={16}/> Добавить контакт</button></div><div className="toolbar"><div className="searchbox"><Search size={16}/><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Поиск контактов"/></div><span className="pill muted">{filteredContacts.length} контакта</span></div><div className="contact-list">{filteredContacts.map((name, i) => <div className="contact-row" key={name}><div className="avatar">{name.split(" ").map((x) => x[0]).join("").slice(0,2)}</div><div><b>{name}</b><small>Демо-контакт · статус не задан</small></div><span className="pill muted">Новый</span></div>)}</div>{showContactForm && <Modal title="Добавить контакт" onClose={() => setShowContactForm(false)}><label>Имя или название<input value={newContact} onChange={(e) => setNewContact(e.target.value)} placeholder="Имя контакта"/></label><button className="primary full" onClick={addContact}>Добавить</button></Modal>}</section>;
     if (active === "Автоматизация") return <section className="panel"><div className="panel-head"><div><h2>Автоматизация</h2><p>Переключатели демонстрационные: процессы не запускаются.</p></div><span className="pill warning">Demo</span></div><div className="flow-list">{["Новый лид → уведомление","Новый диалог → классификация","Еженедельный отчёт"].map((name, i) => <div className="flow-row" key={name}><div className="flow-symbol"><Workflow size={18}/></div><div className="flow-name"><b>{name}</b><small>Локальный макет workflow</small></div><button className={enabledFlows[i] ? "toggle on" : "toggle"} onClick={() => setEnabledFlows((old) => old.map((v, j) => j === i ? !v : v))}>{enabledFlows[i] ? "Вкл." : "Выкл."}</button></div>)}</div></section>;
     if (active === "Интеграции") return <IntegrationsPanel />;
-    if (active === "Воронки") return <section className="panel"><div className="panel-head"><div><h2>Конструктор воронок</h2><p>Черновая визуальная схема сценария.</p></div><span className="pill warning">Макет</span></div><div className="funnel-canvas">{["Триггер: новое обращение","AI: определить намерение","Условие: квалифицирован?","Действие: передать оператору"].map((x, i) => <div className="funnel-step" key={x}><span>{String(i + 1).padStart(2,"0")}</span><b>{x}</b>{i < 3 && <ChevronDown size={17}/>}</div>)}</div><button className="secondary" onClick={() => setNotice("Редактор узлов и сохранение схем будут следующим этапом.")}><Plus size={15}/> Добавить шаг</button></section>;
-    if (active === "Telegram Workspace") return <Placeholder icon={MessageCircle} title="Telegram Workspace" text="Подключение Telegram Bot API, приём webhook-событий и inbox диалогов." status="Бот не подключён"/>;
-    if (active === "Кампании") return <Placeholder icon={Send} title="Кампании" text="Планирование сообщений для пользователей, давших согласие на коммуникацию." status="Нет активных кампаний"/>;
+    if (active === "Кампании") return <TelegramCampaignsPanel />;
+    if (active === "Воронки") return <FunnelBuilder />;
+    if (active === "Telegram Workspace") return <TelegramChannelsPanel />;
+    if (active === "AI Автопостинг") return <AutopostingPanel />;
+    if (active === "Donor Manager") return <><DonorManagerPanel /><TelegramIntakePanel /><FirecrawlSourcesPanel /></>;
     if (active === "Контент-студия") return <Placeholder icon={FileText} title="Контент-студия" text="Черновики публикаций, генерация материалов и контент-календарь." status="Черновиков пока нет"/>;
     if (active === "Использование") return <Placeholder icon={ChartNoAxesCombined} title="Использование ресурсов" text="Здесь появятся запросы к моделям, токены, стоимость и лимиты." status="Учёт расходов ещё не подключён"/>;
     return <Placeholder icon={Settings} title="Настройки" text="Профиль, рабочее пространство, безопасность и управление доступами." status="Локальный демо-профиль"/>;
