@@ -32,8 +32,9 @@ export async function middleware(request: NextRequest) {
   const authenticated = !error && Boolean(data?.claims?.sub);
   const isLogin = request.nextUrl.pathname === "/login";
   const isAuthCallback = request.nextUrl.pathname.startsWith("/auth/callback");
+  const isBotWebhook = request.nextUrl.pathname.startsWith("/api/bot-replies/hook/");
 
-  if (!authenticated && !isLogin && !isAuthCallback) {
+  if (!authenticated && !isLogin && !isAuthCallback && !isBotWebhook) {
     const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || request.nextUrl.origin;
     const loginUrl = new URL("/login", siteUrl);
     loginUrl.searchParams.set("next", request.nextUrl.pathname);
