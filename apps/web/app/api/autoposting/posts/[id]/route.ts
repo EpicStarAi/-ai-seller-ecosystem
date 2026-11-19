@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { decryptIntegrationSecret } from "@/lib/integrations/crypto";
 import { generateText, rewriteSystemPrompt, type ChatProvider } from "@/lib/ai/generate";
 import { buildPostReplyMarkup } from "@/lib/telegram/post-buttons";
+import { MEDIA_CAPTION_LIMIT, parsePostMedia, planPublish, readMediaFile } from "@/lib/autoposting/media";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,7 +24,7 @@ async function access(request: Request, write = false) {
 
 async function loadPost(ctx: { supabase: Awaited<ReturnType<typeof createClient>>; organizationId: string }, id: string) {
   const { data, error } = await ctx.supabase.from("autoposting_posts")
-    .select("id,flow_id,content_item_id,status,original_text,draft_text,source_url,last_error")
+    .select("id,flow_id,content_item_id,status,original_text,draft_text,source_url,media,last_error")
     .eq("id", id).eq("organization_id", ctx.organizationId).maybeSingle();
   if (error || !data) return null;
   return data;
@@ -51,16 +52,34 @@ async function resolveProvider(supabase: Awaited<ReturnType<typeof createClient>
   return { provider: "ollama" as const, secret: undefined };
 }
 
-async function sendTelegram(token: string, payload: Record<string, unknown>) {
+async function sendTelegram(token: string, method: string, payload: Record<string, unknown>, files?: { field: string; filename: string; bytes: Buffer; mime: string }[]) {
   let lastError = "Telegram не принял публикацию.";
   for (let attempt = 0; attempt < 4; attempt += 1) {
-    const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-      cache: "no-store",
-      signal: AbortSignal.timeout(20000),
-    });
+    let response: Response;
+    if (files && files.length) {
+      const form = new FormData();
+      for (const [key, value] of Object.entries(payload)) {
+        if (value == null) continue;
+        form.append(key, typeof value === "string" ? value : JSON.stringify(value));
+      }
+      for (const file of files) {
+        form.append(file.field, new Blob([new Uint8Array(file.bytes)], { type: file.mime }), file.filename);
+      }
+      response = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
+        method: "POST",
+        body: form,
+        cache: "no-store",
+        signal: AbortSignal.timeout(60000),
+      });
+    } else {
+      response = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+        cache: "no-store",
+        signal: AbortSignal.timeout(20000),
+      });
+    }
     const result = await response.json() as Record<string, any>;
     if (response.ok && result.ok) return result;
     const retryAfter = Number(result?.parameters?.retry_after ?? 0);
@@ -72,6 +91,13 @@ async function sendTelegram(token: string, payload: Record<string, unknown>) {
     break;
   }
   throw new Error(lastError);
+}
+
+function firstMessageId(result: Record<string, any>): string | null {
+  const body = result?.result;
+  if (Array.isArray(body) && body[0]?.message_id != null) return String(body[0].message_id);
+  if (body?.message_id != null) return String(body.message_id);
+  return null;
 }
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
@@ -131,7 +157,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     const draftText = typeof body.draftText === "string" && body.draftText.trim()
       ? body.draftText.trim().slice(0, 4096)
       : (post.draft_text || "").trim();
-    if (!draftText) return NextResponse.json({ error: "Пустой текст нельзя опубликовать." }, { status: 422 });
+    const preparedMedia = parsePostMedia(post.media);
+    if (!draftText && preparedMedia.items.length === 0) return NextResponse.json({ error: "Пустой текст нельзя опубликовать." }, { status: 422 });
     const { data: flow } = await ctx.supabase.from("autoposting_flows")
       .select("id,channel_id,moderation_enabled,post_buttons")
       .eq("id", post.flow_id).eq("organization_id", ctx.organizationId).maybeSingle();
@@ -152,15 +179,43 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     try { token = decryptIntegrationSecret(stored.nonce, stored.ciphertext, ctx.organizationId, "telegram"); }
     catch { return NextResponse.json({ error: "Не удалось расшифровать Telegram credential." }, { status: 500 }); }
     const replyMarkup = buildPostReplyMarkup(flow.post_buttons, { source_url: post.source_url });
-    const payload: Record<string, unknown> = {
-      chat_id: channel.chat_id,
-      text: draftText,
-      disable_web_page_preview: true,
-    };
-    if (replyMarkup) payload.reply_markup = replyMarkup;
+    const media = preparedMedia;
+    const steps = planPublish(draftText, media, Boolean(replyMarkup));
     try {
-      const result = await sendTelegram(token, payload);
-      const messageId = result?.result?.message_id != null ? String(result.result.message_id) : null;
+      let messageId: string | null = null;
+      for (const step of steps) {
+        if (step.method === "sendMessage") {
+          const payload: Record<string, unknown> = { chat_id: channel.chat_id, text: draftText || " ", disable_web_page_preview: true };
+          if (step.buttons && replyMarkup) payload.reply_markup = replyMarkup;
+          const result = await sendTelegram(token, "sendMessage", payload);
+          if (!messageId) messageId = firstMessageId(result);
+          continue;
+        }
+        if (step.method === "sendMediaGroup") {
+          const files: { field: string; filename: string; bytes: Buffer; mime: string }[] = [];
+          const group: Record<string, unknown>[] = [];
+          for (const [i, item] of media.items.entries()) {
+            const file = readMediaFile(item.relpath);
+            if (!file) continue;
+            const field = `file${i}`;
+            files.push({ field, filename: item.relpath.split("/").pop() || `${field}`, bytes: file.bytes, mime: item.mime });
+            group.push({ type: item.kind === "video" ? "video" : "photo", media: `attach://${field}` });
+          }
+          if (!group.length) throw new Error("Не удалось прочитать медиафайлы для альбома.");
+          const result = await sendTelegram(token, "sendMediaGroup", { chat_id: channel.chat_id, media: group }, files);
+          if (!messageId) messageId = firstMessageId(result);
+          continue;
+        }
+        const item = media.items[0];
+        const file = item ? readMediaFile(item.relpath) : null;
+        if (!file || !item) throw new Error("Не удалось прочитать медиафайл.");
+        const field = step.method === "sendVideo" ? "video" : "photo";
+        const payload: Record<string, unknown> = { chat_id: channel.chat_id };
+        if (step.caption && draftText) payload.caption = draftText.slice(0, MEDIA_CAPTION_LIMIT);
+        if (step.buttons && replyMarkup) payload.reply_markup = replyMarkup;
+        const result = await sendTelegram(token, step.method, payload, [{ field, filename: item.relpath.split("/").pop() || field, bytes: file.bytes, mime: item.mime }]);
+        if (!messageId) messageId = firstMessageId(result);
+      }
       const { error } = await ctx.supabase.from("autoposting_posts").update({
         status: "published",
         draft_text: draftText,

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { AlertCircle, CheckCircle2, ExternalLink, LoaderCircle, RefreshCw, Send, Trash2, WandSparkles } from "lucide-react";
+import { parsePostMedia } from "@/lib/autoposting/media";
 
 type Draft = {
   id: string;
@@ -17,6 +18,7 @@ type Draft = {
   last_error: string | null;
   published_message_id: string | null;
   published_at: string | null;
+  media?: unknown;
   created_at: string;
   updated_at: string;
   autoposting_flows?: { name: string } | { name: string }[] | null;
@@ -141,6 +143,19 @@ export default function ModerationPanel() {
                   <a href={post.source_url} target="_blank" rel="noreferrer"><ExternalLink size={13}/> Источник</a>
                 </p>
               )}
+              {(() => {
+                const media = parsePostMedia(post.media);
+                if (!media.items.length && !media.skipped.length) return null;
+                return <div className="moderation-media">
+                  {media.items.map((item, index) => {
+                    const src = `/api/autoposting/posts/${encodeURIComponent(post.id)}/media/${index}?organizationId=${encodeURIComponent(organizationId)}`;
+                    return item.kind === "video"
+                      ? <video key={item.relpath} className="moderation-media-item" controls preload="metadata" src={src} />
+                      : <img key={item.relpath} className="moderation-media-item" alt="" src={src} />;
+                  })}
+                  {media.skipped.length > 0 && <small>Часть медиа донора не сохранена ({media.skipped.length}).</small>}
+                </div>;
+              })()}
               {post.last_error && <div className="integration-alert error"><AlertCircle size={16}/><span>{post.last_error}</span></div>}
               <div className="moderation-grid">
                 <label>Оригинал донора

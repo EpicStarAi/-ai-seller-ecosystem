@@ -22,7 +22,13 @@ from telethon.errors import (
     UsernameInvalidError,
     UsernameNotOccupiedError,
 )
-from telethon.tl.types import MessageMediaDocument, MessageMediaPhoto
+from telethon.tl.types import (
+    DocumentAttributeAnimated,
+    DocumentAttributeFilename,
+    DocumentAttributeVideo,
+    MessageMediaDocument,
+    MessageMediaPhoto,
+)
 
 ENV_FILE = Path("/etc/ai-seller-telegram-listener.env")
 def load_env():
@@ -45,6 +51,11 @@ SESSION=os.environ.get("TELEGRAM_SESSION","/var/lib/ai-seller-telegram-listener/
 POLL=int(os.environ.get("POLL_INTERVAL_SECONDS","60"))
 CACHE_PATH=Path(os.environ.get("TG_ENTITY_CACHE","/var/lib/ai-seller-telegram-listener/entity-cache.json"))
 DONOR_REFRESH_SECONDS=max(60, int(os.environ.get("DONOR_REFRESH_SECONDS", "300")))
+MEDIA_ROOT=Path(os.environ.get("TG_MEDIA_ROOT","/var/lib/ai-seller-telegram-listener/media"))
+MAX_PHOTO_BYTES=10*1024*1024
+MAX_VIDEO_BYTES=50*1024*1024
+MAX_ALBUM_ITEMS=10
+MAX_TOTAL_BYTES=80*1024*1024
 DONOR_SKIP_ERRORS=(
     ChannelPrivateError,
     ChannelInvalidError,
@@ -103,6 +114,111 @@ def media_metadata(message):
             result["attributes"]=[type(a).__name__ for a in doc.attributes]
     else:
         result["type"]=type(media).__name__
+    return result
+
+def _ensure_media_root():
+    MEDIA_ROOT.mkdir(parents=True,exist_ok=True)
+    tmp=MEDIA_ROOT/"tmp"
+    tmp.mkdir(parents=True,exist_ok=True)
+    try:
+        os.chmod(MEDIA_ROOT,0o750)
+        os.chmod(tmp,0o750)
+    except PermissionError:
+        pass
+
+def _message_size(message):
+    media=message.media
+    if isinstance(media,MessageMediaDocument) and media.document and media.document.size:
+        return int(media.document.size)
+    file=getattr(message,"file",None)
+    size=getattr(file,"size",None) if file is not None else None
+    return int(size) if size else 0
+
+def _classify_media(message):
+    media=message.media
+    if isinstance(media,MessageMediaPhoto):
+        return "photo",".jpg","image/jpeg",_message_size(message)
+    if not isinstance(media,MessageMediaDocument) or not media.document:
+        return None,None,None,_message_size(message)
+    doc=media.document
+    mime=(doc.mime_type or "").lower()
+    attrs=list(doc.attributes or [])
+    is_video=any(isinstance(a,DocumentAttributeVideo) for a in attrs)
+    is_animated=any(isinstance(a,DocumentAttributeAnimated) for a in attrs)
+    name=""
+    for a in attrs:
+        if isinstance(a,DocumentAttributeFilename) and a.file_name:
+            name=a.file_name.lower()
+    if mime.startswith("image/") and mime in {"image/jpeg","image/jpg","image/png","image/webp"} and not is_video:
+        ext={ "image/jpeg":".jpg","image/jpg":".jpg","image/png":".png","image/webp":".webp"}[mime]
+        return "photo",ext,mime,_message_size(message)
+    if (is_video and not is_animated) or mime in {"video/mp4","video/quicktime"}:
+        ext=".mp4" if not name.endswith(".mov") else ".mov"
+        if mime=="video/quicktime":
+            ext=".mov"
+        return "video",ext,mime or "video/mp4",_message_size(message)
+    return None,None,mime,_message_size(message)
+
+async def collect_message_media(client, donor_id, message_id, messages):
+    """Download photo/video (and album items) under MEDIA_ROOT. Never follows user-controlled paths."""
+    _ensure_media_root()
+    items=[]
+    skipped=[]
+    total=0
+    dest_dir=MEDIA_ROOT/str(donor_id)/str(message_id)
+    dest_dir.mkdir(parents=True,exist_ok=True)
+    try:
+        os.chmod(dest_dir,0o750)
+        os.chmod(dest_dir.parent,0o750)
+    except PermissionError:
+        pass
+    for raw in messages[:MAX_ALBUM_ITEMS]:
+        kind,ext,mime,size=_classify_media(raw)
+        if not kind:
+            skipped.append({"reason":"unsupported_type","mime":mime,"size_bytes":size})
+            continue
+        limit=MAX_PHOTO_BYTES if kind=="photo" else MAX_VIDEO_BYTES
+        if size and size>limit:
+            skipped.append({"reason":"too_large","kind":kind,"size_bytes":size})
+            continue
+        if total+size>MAX_TOTAL_BYTES and size:
+            skipped.append({"reason":"album_too_large","kind":kind,"size_bytes":size})
+            continue
+        filename=f"{len(items)}{ext}"
+        dest=dest_dir/filename
+        tmp=MEDIA_ROOT/"tmp"/f"{donor_id}-{message_id}-{filename}"
+        try:
+            path=await _retry_flood(
+                f"download media message={getattr(raw,'id',message_id)}",
+                lambda t=tmp, m=raw: m.download_media(file=str(t)),
+            )
+            if not path:
+                skipped.append({"reason":"download_failed","kind":kind})
+                continue
+            tmp_path=Path(path)
+            actual=tmp_path.stat().st_size
+            limit=MAX_PHOTO_BYTES if kind=="photo" else MAX_VIDEO_BYTES
+            if actual>limit or total+actual>MAX_TOTAL_BYTES:
+                tmp_path.unlink(missing_ok=True)
+                skipped.append({"reason":"too_large","kind":kind,"size_bytes":actual})
+                continue
+            os.replace(tmp_path,dest)
+            os.chmod(dest,0o640)
+            relpath=f"{donor_id}/{message_id}/{filename}"
+            items.append({"kind":kind,"mime":mime or ("image/jpeg" if kind=="photo" else "video/mp4"),"bytes":actual,"relpath":relpath})
+            total+=actual
+        except Exception as exc:
+            log.info("Media download skipped donor=%s message=%s: %s",donor_id,message_id,type(exc).__name__)
+            skipped.append({"reason":"download_error","kind":kind or "unknown"})
+            try:
+                tmp.unlink(missing_ok=True)
+            except Exception:
+                pass
+    if len(messages)>MAX_ALBUM_ITEMS:
+        skipped.append({"reason":"album_truncated","count":len(messages)-MAX_ALBUM_ITEMS})
+    result={"present":bool(items or skipped),"grouped":len(messages)>1,"items":items}
+    if skipped:
+        result["skipped"]=skipped
     return result
 
 def _describe_sent_code(sent):
@@ -249,10 +365,13 @@ async def run_listener():
     cached_entities=_load_entity_cache()
     unresolvable={}
     new_message_event=events.NewMessage(chats=set(),incoming=True)
+    album_event=events.Album(chats=set())
 
     def _sync_watched():
         # Reassign after Telethon resolve(), which replaces the chats set once.
-        new_message_event.chats=set(donor_by_peer)
+        watched=set(donor_by_peer)
+        new_message_event.chats=watched
+        album_event.chats=watched
 
     async def _resolve_entity(donor_id,username,chat_id):
         if username:
@@ -332,37 +451,64 @@ async def run_listener():
 
     await refresh_donors()
 
+    async def _ingest_messages(donor, messages):
+        first=messages[0]
+        body="\n\n".join((m.message or "").strip() for m in messages if (m.message or "").strip())
+        media=await collect_message_media(client,donor["id"],str(first.id),messages)
+        result=await asyncio.to_thread(rpc,"ingest_telegram_listener_post",{
+            "p_secret":SHARED_SECRET,
+            "p_donor_id":donor["id"],
+            "p_message_id":str(first.id),
+            "p_message_text":body,
+            "p_message_date":first.date.astimezone(timezone.utc).isoformat() if first.date else datetime.now(timezone.utc).isoformat(),
+            "p_media":media,
+        })
+        if result and result.get("duplicate"):
+            log.info("Duplicate skipped donor=%s message=%s",donor["id"],first.id)
+        else:
+            log.info("New donor post queued donor=%s message=%s media_items=%s",donor["id"],first.id,len(media.get("items") or []))
+
     @client.on(new_message_event)
     async def on_new_message(event):
         try:
             message=event.message
             if not getattr(message,"post",False):
                 return
+            if getattr(message,"grouped_id",None):
+                return
             peer_id=utils.get_peer_id(message.peer_id)
             donor=donor_by_peer.get(peer_id)
             if not donor:
                 return
-            body=message.message or ""
-            media=media_metadata(message)
             try:
-                result=await asyncio.to_thread(rpc,"ingest_telegram_listener_post",{
-                    "p_secret":SHARED_SECRET,
-                    "p_donor_id":donor["id"],
-                    "p_message_id":str(message.id),
-                    "p_message_text":body,
-                    "p_message_date":message.date.astimezone(timezone.utc).isoformat() if message.date else datetime.now(timezone.utc).isoformat(),
-                    "p_media":media,
-                })
-                if result and result.get("duplicate"):
-                    log.info("Duplicate skipped donor=%s message=%s",donor["id"],message.id)
-                else:
-                    log.info("New donor post queued donor=%s message=%s media=%s",donor["id"],message.id,bool(media))
+                await _ingest_messages(donor,[message])
             except Exception:
                 log.exception("Failed to ingest donor post donor=%s message=%s",donor["id"],message.id)
         except FloodWaitError as exc:
             await _sleep_flood(exc,"new message handler")
         except Exception:
             log.exception("Failed to handle incoming message")
+
+    @client.on(album_event)
+    async def on_album(event):
+        try:
+            messages=list(event.messages or [])
+            if not messages:
+                return
+            if not any(getattr(m,"post",False) for m in messages):
+                return
+            peer_id=utils.get_peer_id(messages[0].peer_id)
+            donor=donor_by_peer.get(peer_id)
+            if not donor:
+                return
+            try:
+                await _ingest_messages(donor,messages)
+            except Exception:
+                log.exception("Failed to ingest donor album donor=%s message=%s",donor["id"],messages[0].id)
+        except FloodWaitError as exc:
+            await _sleep_flood(exc,"album handler")
+        except Exception:
+            log.exception("Failed to handle incoming album")
 
     while True:
         await asyncio.sleep(DONOR_REFRESH_SECONDS+random.uniform(0,20))

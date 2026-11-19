@@ -127,3 +127,8 @@
 .moderation-grid textarea{min-height:160px;resize:vertical}
 .moderation-meta{display:flex;justify-content:space-between;gap:8px;margin-top:8px;color:#8999af;font-size:9px}
 @media(max-width:900px){.moderation-grid{grid-template-columns:1fr}}
+
+.moderation-media{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.moderation-media-item{max-width:220px;max-height:180px;object-fit:cover;border-radius:8px;border:1px solid #29364a;background:#101827}
+.moderation-media video.moderation-media-item{max-width:280px}
+.moderation-media small{flex-basis:100%;color:#8999af;font-size:9px}

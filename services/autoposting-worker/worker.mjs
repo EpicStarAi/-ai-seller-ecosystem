@@ -243,6 +243,13 @@ function buttonMarkup(postButtons, sourceUrl) {
   return keyboard.length ? { inline_keyboard: keyboard } : undefined;
 }
 
+
+function extractMedia(metadata) {
+  if (!metadata || typeof metadata !== "object") return {};
+  if (metadata.media && typeof metadata.media === "object") return metadata.media;
+  return metadata;
+}
+
 async function rewriteOnce() {
   const items = await sb("telegram_content_items?select=id,organization_id,flow_id,donor_id,source_url,source_message_id,title,body,metadata,created_at&order=created_at.asc&limit=40");
   if (!Array.isArray(items) || items.length === 0) {
@@ -280,7 +287,7 @@ async function rewriteOnce() {
           original_text: original.slice(0, 20000),
           draft_text: "",
           source_url: item.source_url || null,
-          media: item.metadata || {},
+          media: extractMedia(item.metadata),
           rejection_reason: ad.reason,
           updated_at: now,
         },
@@ -313,7 +320,7 @@ async function rewriteOnce() {
           original_text: original.slice(0, 20000),
           draft_text: generated.text,
           source_url: item.source_url || null,
-          media: item.metadata || {},
+          media: extractMedia(item.metadata),
           provider: generated.provider,
           model: generated.model,
           updated_at: now,
@@ -334,7 +341,7 @@ async function rewriteOnce() {
 }
 
 async function dryRunPublish() {
-  const rows = await sb("autoposting_posts?status=eq.pending_review&select=id,flow_id,source_url,draft_text,organization_id&order=created_at.desc&limit=1");
+  const rows = await sb("autoposting_posts?status=eq.pending_review&select=id,flow_id,source_url,draft_text,media,organization_id&order=created_at.desc&limit=1");
   if (!rows?.[0]) {
     log("dry-run-publish: no pending drafts");
     return;
@@ -346,10 +353,28 @@ async function dryRunPublish() {
   const channels = await sb(`telegram_channels?id=eq.${flow.channel_id}&select=id,username,chat_id,title`);
   const channel = channels?.[0];
   const reply_markup = buttonMarkup(flow.post_buttons, post.source_url);
+  const media = extractMedia(post.media);
+  const items = Array.isArray(media.items) ? media.items : [];
+  const text = String(post.draft_text || "");
+  let steps;
+  if (items.length === 1) {
+    const method = items[0].kind === "video" ? "sendVideo" : "sendPhoto";
+    steps = text && text.length <= 1024
+      ? [{ method, caption: true, buttons: Boolean(reply_markup), count: 1 }]
+      : [{ method, caption: false, buttons: false, count: 1 }].concat(text || reply_markup ? [{ method: "sendMessage", caption: false, buttons: Boolean(reply_markup), count: 0 }] : []);
+  } else if (items.length > 1) {
+    steps = [{ method: "sendMediaGroup", caption: false, buttons: false, count: items.length }];
+    if (text || reply_markup) steps.push({ method: "sendMessage", caption: false, buttons: Boolean(reply_markup), count: 0 });
+  } else {
+    steps = [{ method: "sendMessage", caption: false, buttons: Boolean(reply_markup), count: 0 }];
+  }
   const payload = {
     chat_id: channel?.chat_id || null,
     channel: channel?.username ? `@${channel.username}` : channel?.title,
-    text_length: String(post.draft_text || "").length,
+    text_length: text.length,
+    media_count: items.length,
+    media_kinds: items.map((item) => item.kind),
+    steps,
     disable_web_page_preview: true,
     reply_markup: reply_markup || null,
     would_send: false,

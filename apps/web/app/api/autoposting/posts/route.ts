@@ -25,7 +25,7 @@ export async function GET(request: Request) {
   const allowed = ["pending_review", "approved", "rejected", "rejected_auto", "published", "failed"];
   const statuses = status === "queue" ? ["pending_review", "failed"] : allowed.includes(status) ? [status] : ["pending_review"];
   const { data, error } = await ctx.supabase.from("autoposting_posts")
-    .select("id,flow_id,content_item_id,status,original_text,draft_text,source_url,provider,model,rejection_reason,last_error,published_message_id,published_at,created_at,updated_at,autoposting_flows(name)")
+    .select("id,flow_id,content_item_id,status,original_text,draft_text,source_url,media,provider,model,rejection_reason,last_error,published_message_id,published_at,created_at,updated_at,autoposting_flows(name)")
     .eq("organization_id", ctx.organizationId)
     .in("status", statuses)
     .order("created_at", { ascending: false })
