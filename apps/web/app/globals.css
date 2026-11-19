@@ -115,3 +115,15 @@
 .funnel-runtime-note{border-top:1px solid #2a374b;padding-top:12px;margin-top:0}
 @media(max-width:900px){.funnel-builder{grid-template-columns:1fr}.funnel-sidebar{order:1}.funnel-editor{order:0}}
 @media(max-width:600px){.funnel-button-row{grid-template-columns:1fr 1fr 24px}.funnel-save-row>*{flex:1}.funnel-add-actions .secondary{flex:1}}
+
+.moderation-layout{display:grid;gap:14px}
+.moderation-head-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.moderation-list{display:grid;gap:12px}
+.moderation-card{border:1px solid #29364a;background:#151f2f;border-radius:10px;padding:13px}
+.moderation-source{margin:8px 0 0}
+.moderation-source a{display:inline-flex;align-items:center;gap:6px;color:#9bb6ff;font-size:10px}
+.moderation-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
+.moderation-grid label{display:grid;gap:6px;font-size:10px;color:#c3cede}
+.moderation-grid textarea{min-height:160px;resize:vertical}
+.moderation-meta{display:flex;justify-content:space-between;gap:8px;margin-top:8px;color:#8999af;font-size:9px}
+@media(max-width:900px){.moderation-grid{grid-template-columns:1fr}}

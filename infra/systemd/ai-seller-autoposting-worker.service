@@ -1,0 +1,21 @@
+[Unit]
+Description=AI Seller autoposting rewrite worker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ai-seller
+Group=ai-seller
+WorkingDirectory=/opt/ai-seller-ci/services/autoposting-worker
+EnvironmentFile=/etc/ai-seller-web.env
+EnvironmentFile=/etc/ai-seller-telegram-listener.env
+ExecStart=/usr/local/bin/node /opt/ai-seller-ci/services/autoposting-worker/worker.mjs
+Nice=10
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

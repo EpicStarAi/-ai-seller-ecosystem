@@ -2,8 +2,7 @@
  * Build Telegram Bot API reply_markup.inline_keyboard from a flow's
  * post_buttons config. URL templates may include {source_url}.
  * Buttons whose URL is missing after substitution (e.g. no source link)
- * are omitted. There is no flow publisher in this repo yet; call
- * buildPostReplyMarkup when one sends a message.
+ * are omitted. The autoposting publisher passes {source_url} from the content item.
  */
 
 export type PostButton = { text: string; url: string };
