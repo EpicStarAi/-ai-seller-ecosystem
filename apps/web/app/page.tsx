@@ -5,6 +5,7 @@ import IntegrationsPanel from "@/components/integrations-panel";
 import TelegramChannelsPanel from "@/components/telegram-channels-panel";
 import AutopostingPanel from "@/components/autoposting-panel";
 import ModerationPanel from "@/components/moderation-panel";
+import PromptLibraryPanel from "@/components/prompt-library-panel";
 import DonorManagerPanel from "@/components/donor-manager-panel";
 import FirecrawlSourcesPanel from "@/components/firecrawl-sources-panel";
 import TelegramIntakePanel from "@/components/telegram-intake-panel";
@@ -20,7 +21,7 @@ import {
   Sparkles, Workflow, X, Zap, LogOut, Wrench
 } from "lucide-react";
 
-type Section = "Обзор" | "Инструменты" | "AI Assistant" | "AI Agent Studio" | "Telegram Workspace" | "AI Автопостинг" | "Модерация" | "Donor Manager" | "Воронки" | "Кампании" | "Контент-студия" | "CRM" | "Автоматизация" | "Интеграции" | "Использование" | "Настройки";
+type Section = "Обзор" | "Инструменты" | "AI Assistant" | "AI Agent Studio" | "Telegram Workspace" | "AI Автопостинг" | "Модерация" | "Промпты" | "Donor Manager" | "Воронки" | "Кампании" | "Контент-студия" | "CRM" | "Автоматизация" | "Интеграции" | "Использование" | "Настройки";
 
 const nav: { group: string; items: { label: Section; icon: typeof LayoutDashboard }[] }[] = [
   { group: "РАБОЧЕЕ ПРОСТРАНСТВО", items: [
@@ -28,7 +29,7 @@ const nav: { group: string; items: { label: Section; icon: typeof LayoutDashboar
     { label: "AI Agent Studio", icon: Bot }, { label: "Telegram Workspace", icon: MessageCircle }
   ]},
   { group: "ПРОДАЖИ И МАРКЕТИНГ", items: [
-    { label: "Воронки", icon: GitBranch }, { label: "AI Автопостинг", icon: Send }, { label: "Модерация", icon: ClipboardCheck }, { label: "Donor Manager", icon: RadioTower }, { label: "Кампании", icon: Send },
+    { label: "Воронки", icon: GitBranch }, { label: "AI Автопостинг", icon: Send }, { label: "Модерация", icon: ClipboardCheck }, { label: "Промпты", icon: FileText }, { label: "Donor Manager", icon: RadioTower }, { label: "Кампании", icon: Send },
     { label: "Контент-студия", icon: FileText }, { label: "CRM", icon: ContactRound }
   ]},
   { group: "СИСТЕМА", items: [
@@ -45,6 +46,7 @@ const descriptions: Record<Section, string> = {
   "Telegram Workspace": "Подключение ботов, входящие сообщения и рабочие диалоги.",
   "AI Автопостинг": "Настройка потоков контента, AI-обработки и расписаний публикаций.",
   "Модерация": "Очередь черновиков: проверка AI-текста и ручная публикация в канал.",
+  "Промпты": "Библиотека сохранённых инструкций для AI-переписывания постов.",
   "Donor Manager": "Telegram-каналы и веб-источники Firecrawl для контентных потоков.",
   "Воронки": "Визуальная схема сценариев привлечения и обработки лидов.",
   "Кампании": "Планирование коммуникаций для согласованных аудиторий.",
@@ -111,6 +113,7 @@ export default function Home() {
     if (active === "Telegram Workspace") return <TelegramChannelsPanel />;
     if (active === "AI Автопостинг") return <AutopostingPanel />;
     if (active === "Модерация") return <ModerationPanel />;
+    if (active === "Промпты") return <PromptLibraryPanel />;
     if (active === "Donor Manager") return <><DonorManagerPanel /><TelegramIntakePanel /><FirecrawlSourcesPanel /></>;
     if (active === "Контент-студия") return <Placeholder icon={FileText} title="Контент-студия" text="Черновики публикаций, генерация материалов и контент-календарь." status="Черновиков пока нет"/>;
     if (active === "Использование") return <Placeholder icon={ChartNoAxesCombined} title="Использование ресурсов" text="Здесь появятся запросы к моделям, токены, стоимость и лимиты." status="Учёт расходов ещё не подключён"/>;

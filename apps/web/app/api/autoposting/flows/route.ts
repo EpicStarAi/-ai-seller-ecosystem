@@ -49,6 +49,12 @@ function parsePayload(body: any) {
     if (!Array.isArray(parsedButtons)) return { error: parsedButtons.error };
     value.post_buttons = parsedButtons;
   }
+  if (Object.prototype.hasOwnProperty.call(body, "promptId") || Object.prototype.hasOwnProperty.call(body, "prompt_id")) {
+    const raw = body.promptId ?? body.prompt_id;
+    if (raw === null || raw === "") value.prompt_id = null;
+    else if (typeof raw === "string" && raw.trim()) value.prompt_id = raw.trim();
+    else return { error: "Некорректный сохранённый промпт." };
+  }
   return { value };
 }
 
@@ -58,7 +64,7 @@ export async function GET(request: Request) {
   const ctx = await access(request, organizationId);
   if ("response" in ctx) return ctx.response;
   const { data, error } = await ctx.supabase.from("autoposting_flows")
-    .select("id,name,channel_id,source_type,keywords,ai_prompt,use_ai_editor,generate_image,moderation_enabled,max_forwarding_enabled,schedule_mode,interval_minutes,cron_expression,status,post_buttons,created_at,updated_at,telegram_channels(title,username)")
+    .select("id,name,channel_id,source_type,keywords,ai_prompt,prompt_id,use_ai_editor,generate_image,moderation_enabled,max_forwarding_enabled,schedule_mode,interval_minutes,cron_expression,status,post_buttons,created_at,updated_at,telegram_channels(title,username),user_prompts(id,name)")
     .eq("organization_id", organizationId).order("created_at", { ascending: false });
   if (error) return NextResponse.json({ error: "Не удалось загрузить потоки автопостинга." }, { status: 500 });
   return NextResponse.json({ flows: data ?? [] });

@@ -128,14 +128,20 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       return NextResponse.json({ error: "Этот черновик нельзя переписать." }, { status: 409 });
     }
     const { data: flow } = await ctx.supabase.from("autoposting_flows")
-      .select("ai_prompt").eq("id", post.flow_id).eq("organization_id", ctx.organizationId).maybeSingle();
+      .select("ai_prompt,prompt_id").eq("id", post.flow_id).eq("organization_id", ctx.organizationId).maybeSingle();
     if (!flow) return NextResponse.json({ error: "Поток не найден." }, { status: 404 });
     try {
+      let promptText = flow.ai_prompt || "";
+      if (flow.prompt_id) {
+        const { data: saved } = await ctx.supabase.from("user_prompts")
+          .select("prompt_text").eq("id", flow.prompt_id).eq("organization_id", ctx.organizationId).maybeSingle();
+        if (saved?.prompt_text) promptText = saved.prompt_text;
+      }
       const provider = await resolveProvider(ctx.supabase, ctx.organizationId);
       const generated = await generateText({
         provider: provider.provider,
         secret: provider.secret,
-        systemPrompt: rewriteSystemPrompt(flow.ai_prompt || ""),
+        systemPrompt: rewriteSystemPrompt(promptText),
         userText: post.original_text || "[Публикация без текста]",
       });
       const { error } = await ctx.supabase.from("autoposting_posts").update({

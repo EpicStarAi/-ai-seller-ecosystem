@@ -65,7 +65,7 @@ export async function generateText(options: {
 }): Promise<{ text: string; provider: ChatProvider; model: string }> {
   const provider = options.provider;
   const model = options.model || defaultModels[provider];
-  const systemPrompt = options.systemPrompt.slice(0, 12000);
+  const systemPrompt = options.systemPrompt.slice(0, 13000);
   const userText = options.userText.slice(0, 20000);
   let endpoint: string;
   let headers: Record<string, string> = {};

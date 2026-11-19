@@ -8,12 +8,12 @@ type Flow = {
   id: string; name: string; channel_id: string; source_type: "web_search" | "telegram_channels"; keywords: string[];
   ai_prompt: string; use_ai_editor: boolean; generate_image: boolean; moderation_enabled: boolean;
   max_forwarding_enabled: boolean; schedule_mode: "interval" | "cron"; interval_minutes: number;
-  cron_expression: string | null; status: string; post_buttons?: { text: string; url: string }[][] | null;
+  cron_expression: string | null; status: string; prompt_id?: string | null; post_buttons?: { text: string; url: string }[][] | null;
   telegram_channels?: { title: string; username: string | null } | null;
 };
 const blank = {
   id: "", name: "", channelId: "", sourceType: "web_search" as "web_search" | "telegram_channels",
-  keywords: "", aiPrompt: "", useAiEditor: false, generateImage: false, moderationEnabled: false,
+  keywords: "", aiPrompt: "", promptId: "", useAiEditor: false, generateImage: false, moderationEnabled: false,
   maxForwardingEnabled: false, scheduleMode: "interval" as "interval" | "cron", intervalMinutes: 60, cronExpression: "",
 };
 
@@ -26,18 +26,23 @@ export default function AutopostingPanel() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [prompts, setPrompts] = useState<{ id: string; name: string }[]>([]);
 
   const refresh = useCallback(async (org: string) => {
-    const [channelResponse, flowResponse] = await Promise.all([
+    const [channelResponse, flowResponse, promptResponse] = await Promise.all([
       fetch(`/api/telegram/channels?organizationId=${encodeURIComponent(org)}`, { cache: "no-store" }),
       fetch(`/api/autoposting/flows?organizationId=${encodeURIComponent(org)}`, { cache: "no-store" }),
+      fetch(`/api/autoposting/prompts?organizationId=${encodeURIComponent(org)}`, { cache: "no-store" }),
     ]);
     const channelData = await channelResponse.json();
     const flowData = await flowResponse.json();
+    const promptData = await promptResponse.json();
     if (!channelResponse.ok) throw new Error(channelData.error || "Не удалось загрузить Telegram-каналы.");
     if (!flowResponse.ok) throw new Error(flowData.error || "Не удалось загрузить потоки.");
+    if (!promptResponse.ok) throw new Error(promptData.error || "Не удалось загрузить промпты.");
     setChannels(channelData.channels || []);
     setFlows(flowData.flows || []);
+    setPrompts(promptData.prompts || []);
   }, []);
 
   useEffect(() => {
@@ -62,7 +67,7 @@ export default function AutopostingPanel() {
   function edit(flow: Flow) {
     setForm({
       id: flow.id, name: flow.name, channelId: flow.channel_id, sourceType: flow.source_type,
-      keywords: (flow.keywords || []).join(", "), aiPrompt: flow.ai_prompt,
+      keywords: (flow.keywords || []).join(", "), aiPrompt: flow.ai_prompt, promptId: flow.prompt_id || "",
       useAiEditor: flow.use_ai_editor, generateImage: flow.generate_image,
       moderationEnabled: flow.moderation_enabled, maxForwardingEnabled: flow.max_forwarding_enabled,
       scheduleMode: flow.schedule_mode, intervalMinutes: flow.interval_minutes || 60,
@@ -82,7 +87,7 @@ export default function AutopostingPanel() {
       const payload = {
         organizationId, id: form.id || undefined, name: form.name, channelId: form.channelId,
         sourceType: form.sourceType, keywords: form.keywords.split(",").map(x => x.trim()).filter(Boolean),
-        aiPrompt: form.aiPrompt, useAiEditor: form.useAiEditor, generateImage: form.generateImage,
+        aiPrompt: form.aiPrompt, promptId: form.promptId || null, useAiEditor: form.useAiEditor, generateImage: form.generateImage,
         moderationEnabled: form.moderationEnabled, maxForwardingEnabled: form.maxForwardingEnabled,
         scheduleMode: form.scheduleMode, intervalMinutes: Number(form.intervalMinutes), cronExpression: form.cronExpression,
       };
@@ -137,7 +142,13 @@ export default function AutopostingPanel() {
         </label>
         <label>Инструкция для AI-генерации
           <textarea value={form.aiPrompt} onChange={e => update("aiPrompt", e.target.value)} placeholder="Опишите тематику канала, стиль и целевую аудиторию…" rows={5} required maxLength={10000}/>
-          <small>Сохранённые промпты и библиотеку шаблонов подключим отдельным шагом.</small>
+        </label>
+        <label>Сохранённый промпт для переписывания
+          <select value={form.promptId} onChange={e => update("promptId", e.target.value)}>
+            <option value="">Не выбран — использовать инструкцию выше</option>
+            {prompts.map(prompt => <option value={prompt.id} key={prompt.id}>{prompt.name}</option>)}
+          </select>
+          <small>Если выбран промпт из библиотеки, именно он используется при AI-переписывании. Библиотека — в разделе «Промпты».</small>
         </label>
         <div className="autoposting-options">
           <label className="autoposting-check"><input type="checkbox" checked={form.useAiEditor} onChange={e => update("useAiEditor", e.target.checked)}/><span><b>AI-редактор</b><small>Дополнительная редактура, улучшение стиля и исправление ошибок.</small></span></label>

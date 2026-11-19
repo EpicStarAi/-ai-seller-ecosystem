@@ -267,7 +267,7 @@ async function rewriteOnce() {
     if (processed >= 8) break;
     let flow = flowCache.get(item.flow_id);
     if (!flow) {
-      const rows = await sb(`autoposting_flows?id=eq.${item.flow_id}&select=id,organization_id,ai_prompt,source_type,channel_id,post_buttons,name`);
+      const rows = await sb(`autoposting_flows?id=eq.${item.flow_id}&select=id,organization_id,ai_prompt,prompt_id,source_type,channel_id,post_buttons,name`);
       flow = rows?.[0];
       if (flow) flowCache.set(item.flow_id, flow);
     }
@@ -304,9 +304,14 @@ async function rewriteOnce() {
         providers = await loadProviders(item.organization_id);
         providerCache.set(item.organization_id, providers);
       }
+      let promptText = flow.ai_prompt || "";
+      if (flow.prompt_id) {
+        const saved = await sb(`user_prompts?id=eq.${flow.prompt_id}&select=prompt_text`);
+        if (saved?.[0]?.prompt_text) promptText = saved[0].prompt_text;
+      }
       const generated = await generateWithFallback(
         providers,
-        rewriteSystemPrompt(flow.ai_prompt),
+        rewriteSystemPrompt(promptText),
         original,
       );
       await sb("autoposting_posts", {
