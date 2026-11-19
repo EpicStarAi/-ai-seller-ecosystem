@@ -89,7 +89,7 @@ export default function DonorManagerPanel() {
           </label>
           <label>Telegram-канал-донор
             <input value={chat} onChange={e => setChat(e.target.value)} placeholder="@channel_name, https://t.me/channel_name или -1001234567890" required/>
-            <small>Можно указать @username, публичную ссылку t.me или числовой Telegram Chat ID (например, -1001234567890). Бот проверит доступ и членство в канале.</small>
+            <small>Можно указать @username, публичную ссылку t.me или числовой Telegram Chat ID (например, -1001234567890). Мониторинг идёт через пользовательский аккаунт Telegram; для публичных каналов добавлять бота администратором не нужно.</small>
           </label>
           <button className="primary" type="submit" disabled={busy || !chat.trim()}>{busy ? <><LoaderCircle className="spin" size={14}/> Проверяем…</> : <><Plus size={14}/> Проверить и добавить источник</>}</button>
         </form>}
@@ -98,11 +98,11 @@ export default function DonorManagerPanel() {
       <div className="panel-head"><div><h2>Источники потока</h2><p>{donors.length} добавленных каналов</p></div><button className="secondary" onClick={() => loadDonors(organizationId,flowId)} disabled={busy || !flowId}><RefreshCw size={14}/> Обновить</button></div>
       {!flowId ? <div className="activity-empty">Выберите Telegram-поток.</div> : donors.length === 0 ? <div className="activity-empty"><RadioTower size={20}/> Добавьте первый канал-донор.</div> :
         <div className="autoposting-flow-list">{donors.map(d => <article className="autoposting-flow" key={d.id}>
-          <div className="autoposting-flow-head"><div><b>{d.title}</b><small>{d.username ? "@" + d.username : d.chat_id}</small></div><span className={d.bot_can_receive_posts ? "pill success" : "pill warning"}>{d.access_status === "membership_unverified" ? "Членство не проверено" : d.bot_can_receive_posts ? "Бот в канале" : "Бот не состоит в канале"}</span></div>
-          <div className="autoposting-flow-meta">{d.access_status === "membership_unverified" ? "Канал найден, но Telegram не разрешил проверить членство. Добавьте бота администратором канала и повторите проверку. Получение публикаций пока не подтверждено." : d.bot_can_receive_posts ? "Участие бота подтверждено. Входящий обработчик новых channel_post ещё не включён." : "Добавьте бота в канал и повторите проверку, чтобы получать новые публикации."}</div>
+          <div className="autoposting-flow-head"><div><b>{d.title}</b><small>{d.username ? "@" + d.username : d.chat_id}</small></div><span className="pill success">Сохранён</span></div>
+          <div className="autoposting-flow-meta">Канал сохранён. Мониторинг публикаций идёт через пользовательский аккаунт Telegram, а не через бота. Для публичных каналов добавлять бота администратором не нужно.</div>
           <div className="autoposting-flow-actions"><button className="text-button danger" onClick={() => remove(d.id)} disabled={busy}><Trash2 size={13}/> Удалить</button></div>
         </article>)}</div>}
-      <div className="integration-alert"><ShieldAlert size={16}/><span>Проверка членства не читает историю канала. Автоматический приём новых публикаций будет следующим техническим этапом — через Telegram updates.</span></div>
+      <div className="integration-alert"><ShieldAlert size={16}/><span>Публикации читает пользовательский аккаунт Telegram, подключённый к слушателю. Для публичных каналов добавлять бота администратором не нужно.</span></div>
     </section>
   </div>;
 }
