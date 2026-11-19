@@ -113,7 +113,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   const now = new Date().toISOString();
 
   if (action === "reject") {
-    if (!["pending_review", "failed"].includes(post.status)) {
+    if (!["pending_review", "failed", "approved"].includes(post.status)) {
       return NextResponse.json({ error: "Этот черновик нельзя отклонить." }, { status: 409 });
     }
     const { error } = await ctx.supabase.from("autoposting_posts").update({
@@ -157,8 +157,27 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     }
   }
 
-  if (action === "publish") {
+  if (action === "approve") {
     if (!["pending_review", "failed"].includes(post.status)) {
+      return NextResponse.json({ error: "Этот черновик нельзя поставить в очередь." }, { status: 409 });
+    }
+    const { data: flow } = await ctx.supabase.from("autoposting_flows")
+      .select("auto_publish_enabled").eq("id", post.flow_id).eq("organization_id", ctx.organizationId).maybeSingle();
+    if (!flow?.auto_publish_enabled) {
+      return NextResponse.json({ error: "Очередь автопубликации для этого потока выключена. Используйте «Опубликовать»." }, { status: 409 });
+    }
+    const draftText = typeof body.draftText === "string" && body.draftText.trim()
+      ? body.draftText.trim().slice(0, 4096)
+      : (post.draft_text || "").trim();
+    const { error } = await ctx.supabase.from("autoposting_posts").update({
+      status: "approved", draft_text: draftText, reviewed_by: ctx.user.id, reviewed_at: now, updated_at: now, last_error: null,
+    }).eq("id", post.id).eq("organization_id", ctx.organizationId);
+    if (error) return NextResponse.json({ error: "Не удалось поставить черновик в очередь." }, { status: 500 });
+    return NextResponse.json({ ok: true, status: "approved" });
+  }
+
+  if (action === "publish") {
+    if (!["pending_review", "failed", "approved"].includes(post.status)) {
       return NextResponse.json({ error: "Этот черновик уже обработан." }, { status: 409 });
     }
     const draftText = typeof body.draftText === "string" && body.draftText.trim()

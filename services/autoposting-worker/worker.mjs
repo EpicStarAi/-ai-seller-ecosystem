@@ -10,6 +10,7 @@
  */
 import { createDecipheriv } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 
 const AD_RULES = [
   { reason: "розыгрыш / giveaway", pattern: /розыгрыш|giveaway|\braffle\b|выиграй\s+(приз|uc|юс)|подпишись.{0,40}выигра/i },
@@ -387,6 +388,215 @@ async function dryRunPublish() {
   log("dry-run-publish payload", JSON.stringify(payload));
 }
 
+
+function slotMatches(now, slots, lastAt, timeZone) {
+  const list = Array.isArray(slots) ? slots : [];
+  const fmt = new Intl.DateTimeFormat("en-GB", { timeZone, hour: "2-digit", minute: "2-digit", year: "numeric", month: "2-digit", day: "2-digit", hourCycle: "h23" });
+  const parts = Object.fromEntries(fmt.formatToParts(now).filter((p) => p.type !== "literal").map((p) => [p.type, p.value]));
+  const hm = `${parts.hour}:${parts.minute}`;
+  const day = `${parts.year}-${parts.month}-${parts.day}`;
+  let lastDay = "", lastHm = "";
+  if (lastAt) {
+    const lp = Object.fromEntries(fmt.formatToParts(new Date(lastAt)).filter((p) => p.type !== "literal").map((p) => [p.type, p.value]));
+    lastDay = `${lp.year}-${lp.month}-${lp.day}`;
+    lastHm = `${lp.hour}:${lp.minute}`;
+  }
+  for (const raw of list) {
+    if (typeof raw !== "string" || !/^\d{2}:\d{2}$/.test(raw)) continue;
+    const [h, m] = raw.split(":").map(Number);
+    const nowMin = Number(parts.hour) * 60 + Number(parts.minute);
+    const slotMin = h * 60 + m;
+    let delta = nowMin - slotMin;
+    if (delta < 0) delta += 24 * 60;
+    if (delta <= 2 && !(lastDay === day && lastHm === raw)) return raw;
+  }
+  return null;
+}
+
+function isIntervalDue(now, lastAt, minutes) {
+  if (!lastAt) return true;
+  const elapsed = (now.getTime() - new Date(lastAt).getTime()) / 60000;
+  return elapsed >= minutes;
+}
+
+async function sendTelegram(token, method, payload, files) {
+  let lastError = "Telegram rejected the scheduled publish.";
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    let response;
+    if (files && files.length) {
+      const form = new FormData();
+      for (const [key, value] of Object.entries(payload)) {
+        if (value == null) continue;
+        form.append(key, typeof value === "string" ? value : JSON.stringify(value));
+      }
+      for (const file of files) {
+        form.append(file.field, new Blob([file.bytes], { type: file.mime }), file.filename);
+      }
+      response = await fetch(`https://api.telegram.org/bot${token}/${method}`, { method: "POST", body: form, signal: AbortSignal.timeout(60000) });
+    } else {
+      response = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(20000),
+      });
+    }
+    const result = await response.json();
+    if (response.ok && result.ok) return result;
+    const retryAfter = Number(result?.parameters?.retry_after ?? 0);
+    if ((response.status === 429 || result?.error_code === 429) && retryAfter > 0 && attempt < 3) {
+      await new Promise((resolve) => setTimeout(resolve, (retryAfter + 0.5) * 1000));
+      continue;
+    }
+    lastError = typeof result?.description === "string" ? result.description : lastError;
+    break;
+  }
+  throw new Error(lastError);
+}
+
+function firstMessageId(result) {
+  const body = result?.result;
+  if (Array.isArray(body) && body[0]?.message_id != null) return String(body[0].message_id);
+  if (body?.message_id != null) return String(body.message_id);
+  return null;
+}
+
+function mediaRoot() {
+  return process.env.TG_MEDIA_ROOT || "/var/lib/ai-seller-telegram-listener/media";
+}
+
+function readStoredMedia(relpath) {
+  if (!/^[0-9a-f-]{36}\/[0-9]{1,20}\/\d{1,2}\.(jpg|jpeg|png|webp|mp4|mov)$/i.test(relpath)) return null;
+  const root = resolve(mediaRoot());
+  const full = resolve(root, relpath);
+  if (full !== root && !full.startsWith(`${root}/`)) return null;
+  try { return { bytes: readFileSync(full), filename: relpath.split("/").pop() }; }
+  catch { return null; }
+}
+
+async function publishDue() {
+  const flows = await sb("autoposting_flows?auto_publish_enabled=eq.true&select=id,organization_id,name,channel_id,post_buttons,auto_publish_mode,auto_publish_interval_minutes,auto_publish_slots,auto_publish_timezone,auto_publish_last_at,moderation_enabled");
+  if (!Array.isArray(flows) || flows.length === 0) {
+    log("schedule: no flows with auto-publish enabled");
+    return { published: 0 };
+  }
+  const now = new Date();
+  let published = 0;
+  for (const flow of flows) {
+    if (flow.auto_publish_enabled !== true) continue;
+    const due = flow.auto_publish_mode === "slots"
+      ? Boolean(slotMatches(now, flow.auto_publish_slots, flow.auto_publish_last_at, flow.auto_publish_timezone || "Europe/Kyiv"))
+      : isIntervalDue(now, flow.auto_publish_last_at, Number(flow.auto_publish_interval_minutes) || 60);
+    if (!due) continue;
+    const rows = await sb(`autoposting_posts?flow_id=eq.${flow.id}&status=eq.approved&select=id,organization_id,flow_id,draft_text,source_url,media&order=created_at.asc&limit=1`);
+    const post = rows?.[0];
+    if (!post) continue;
+    const text = String(post.draft_text || "").trim();
+    const media = extractMedia(post.media);
+    const items = Array.isArray(media.items) ? media.items : [];
+    if (!text && !items.length) {
+      await sb(`autoposting_posts?id=eq.${post.id}`, { method: "PATCH", prefer: "return=minimal", body: { status: "failed", last_error: "empty approved draft", updated_at: now.toISOString() } });
+      log("schedule: empty approved draft marked failed");
+      continue;
+    }
+    const channels = await sb(`telegram_channels?id=eq.${flow.channel_id}&select=id,chat_id,integration_id,can_post_messages`);
+    const channel = channels?.[0];
+    if (!channel?.can_post_messages || !channel.chat_id) {
+      log("schedule: channel cannot post, skip flow");
+      continue;
+    }
+    const secrets = await sb(`integration_secrets?integration_id=eq.${channel.integration_id}&select=nonce,ciphertext`);
+    if (!secrets?.[0]) {
+      log("schedule: missing telegram secret, skip flow");
+      continue;
+    }
+    let token;
+    try { token = decryptSecret(secrets[0].nonce, secrets[0].ciphertext, post.organization_id, "telegram"); }
+    catch (error) {
+      log("schedule: decrypt failed", error instanceof Error ? error.message : "error");
+      continue;
+    }
+    const reply_markup = buttonMarkup(flow.post_buttons, post.source_url);
+    const steps = [];
+    if (items.length === 1) {
+      const method = items[0].kind === "video" ? "sendVideo" : "sendPhoto";
+      if (text && text.length <= 1024) steps.push({ method, caption: true, buttons: Boolean(reply_markup) });
+      else {
+        steps.push({ method, caption: false, buttons: false });
+        if (text || reply_markup) steps.push({ method: "sendMessage", caption: false, buttons: Boolean(reply_markup) });
+      }
+    } else if (items.length > 1) {
+      steps.push({ method: "sendMediaGroup", caption: false, buttons: false });
+      if (text || reply_markup) steps.push({ method: "sendMessage", caption: false, buttons: Boolean(reply_markup) });
+    } else {
+      steps.push({ method: "sendMessage", caption: false, buttons: Boolean(reply_markup) });
+    }
+    const stamp = now.toISOString();
+    try {
+      let messageId = null;
+      for (const step of steps) {
+        if (step.method === "sendMessage") {
+          const payload = { chat_id: channel.chat_id, text: text || " ", disable_web_page_preview: true };
+          if (step.buttons && reply_markup) payload.reply_markup = reply_markup;
+          const result = await sendTelegram(token, "sendMessage", payload);
+          if (!messageId) messageId = firstMessageId(result);
+          continue;
+        }
+        if (step.method === "sendMediaGroup") {
+          const files = [];
+          const group = [];
+          items.forEach((item, i) => {
+            const file = readStoredMedia(item.relpath);
+            if (!file) return;
+            const field = `file${i}`;
+            files.push({ field, filename: file.filename, bytes: file.bytes, mime: item.mime || "application/octet-stream" });
+            group.push({ type: item.kind === "video" ? "video" : "photo", media: `attach://${field}` });
+          });
+          if (!group.length) throw new Error("media files missing");
+          const result = await sendTelegram(token, "sendMediaGroup", { chat_id: channel.chat_id, media: group }, files);
+          if (!messageId) messageId = firstMessageId(result);
+          continue;
+        }
+        const item = items[0];
+        const file = item ? readStoredMedia(item.relpath) : null;
+        if (!file || !item) throw new Error("media file missing");
+        const field = step.method === "sendVideo" ? "video" : "photo";
+        const payload = { chat_id: channel.chat_id };
+        if (step.caption && text) payload.caption = text.slice(0, 1024);
+        if (step.buttons && reply_markup) payload.reply_markup = reply_markup;
+        const result = await sendTelegram(token, step.method, payload, [{ field, filename: file.filename, bytes: file.bytes, mime: item.mime || "application/octet-stream" }]);
+        if (!messageId) messageId = firstMessageId(result);
+      }
+      await sb(`autoposting_posts?id=eq.${post.id}`, {
+        method: "PATCH",
+        prefer: "return=minimal",
+        body: { status: "published", published_message_id: messageId, published_chat_id: channel.chat_id, published_at: stamp, last_error: null, updated_at: stamp },
+      });
+      await sb(`autoposting_flows?id=eq.${flow.id}`, {
+        method: "PATCH",
+        prefer: "return=minimal",
+        body: { auto_publish_last_at: stamp, updated_at: stamp },
+      });
+      published += 1;
+      log("schedule: published approved draft", flow.name || flow.id);
+    } catch (error) {
+      const message = error instanceof Error ? error.message.slice(0, 500) : "scheduled publish failed";
+      await sb(`autoposting_posts?id=eq.${post.id}`, {
+        method: "PATCH",
+        prefer: "return=minimal",
+        body: { status: "failed", last_error: message, updated_at: stamp },
+      });
+      log("schedule: publish failed", message);
+    }
+  }
+  log("schedule done", { published, enabled_flows: flows.length });
+  return { published };
+}
+
+async function run() {
+  await rewriteOnce();
+  await publishDue();
+}
 const mode = process.argv.includes("--dry-run-publish") ? "dry-run-publish" : "rewrite";
 mode === "dry-run-publish" ? dryRunPublish().catch((error) => { log("fatal", error instanceof Error ? error.message : "error"); process.exit(1); })
-  : rewriteOnce().catch((error) => { log("fatal", error instanceof Error ? error.message : "error"); process.exit(1); });
+  : run().catch((error) => { log("fatal", error instanceof Error ? error.message : "error"); process.exit(1); });

@@ -55,6 +55,30 @@ function parsePayload(body: any) {
     else if (typeof raw === "string" && raw.trim()) value.prompt_id = raw.trim();
     else return { error: "Некорректный сохранённый промпт." };
   }
+  if (Object.prototype.hasOwnProperty.call(body, "autoPublishEnabled") || Object.prototype.hasOwnProperty.call(body, "auto_publish_enabled")) {
+    value.auto_publish_enabled = body.autoPublishEnabled === true || body.auto_publish_enabled === true;
+    const mode = body.autoPublishMode ?? body.auto_publish_mode;
+    value.auto_publish_mode = mode === "slots" ? "slots" : "interval";
+    const interval = Number(body.autoPublishIntervalMinutes ?? body.auto_publish_interval_minutes ?? 60);
+    if (value.auto_publish_mode === "interval" && (!Number.isInteger(interval) || interval < 30 || interval > 43200)) {
+      return { error: "Интервал автопубликации должен быть от 30 до 43200 минут." };
+    }
+    value.auto_publish_interval_minutes = Number.isInteger(interval) && interval >= 30 ? interval : 60;
+    const rawSlots = body.autoPublishSlots ?? body.auto_publish_slots ?? [];
+    const slots = Array.isArray(rawSlots)
+      ? rawSlots.filter((item: unknown) => typeof item === "string" && /^\d{2}:\d{2}$/.test(item)).slice(0, 12)
+      : typeof rawSlots === "string"
+        ? rawSlots.split(/[,\s]+/).map((item: string) => item.trim()).filter((item: string) => /^\d{2}:\d{2}$/.test(item)).slice(0, 12)
+        : [];
+    if (value.auto_publish_mode === "slots" && slots.length === 0) {
+      return { error: "Укажите хотя бы один слот времени в формате ЧЧ:ММ." };
+    }
+    value.auto_publish_slots = slots;
+    const tz = typeof (body.autoPublishTimezone ?? body.auto_publish_timezone) === "string"
+      ? String(body.autoPublishTimezone ?? body.auto_publish_timezone).trim()
+      : "";
+    value.auto_publish_timezone = tz || "Europe/Kyiv";
+  }
   return { value };
 }
 
@@ -64,7 +88,7 @@ export async function GET(request: Request) {
   const ctx = await access(request, organizationId);
   if ("response" in ctx) return ctx.response;
   const { data, error } = await ctx.supabase.from("autoposting_flows")
-    .select("id,name,channel_id,source_type,keywords,ai_prompt,prompt_id,use_ai_editor,generate_image,moderation_enabled,max_forwarding_enabled,schedule_mode,interval_minutes,cron_expression,status,post_buttons,created_at,updated_at,telegram_channels(title,username),user_prompts(id,name)")
+    .select("id,name,channel_id,source_type,keywords,ai_prompt,prompt_id,use_ai_editor,generate_image,moderation_enabled,max_forwarding_enabled,schedule_mode,interval_minutes,cron_expression,status,post_buttons,auto_publish_enabled,auto_publish_mode,auto_publish_interval_minutes,auto_publish_slots,auto_publish_timezone,auto_publish_last_at,created_at,updated_at,telegram_channels(title,username),user_prompts(id,name)")
     .eq("organization_id", organizationId).order("created_at", { ascending: false });
   if (error) return NextResponse.json({ error: "Не удалось загрузить потоки автопостинга." }, { status: 500 });
   return NextResponse.json({ flows: data ?? [] });

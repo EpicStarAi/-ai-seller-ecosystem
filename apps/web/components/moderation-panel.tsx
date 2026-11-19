@@ -21,13 +21,25 @@ type Draft = {
   media?: unknown;
   created_at: string;
   updated_at: string;
-  autoposting_flows?: { name: string } | { name: string }[] | null;
+  autoposting_flows?: { name: string; auto_publish_enabled?: boolean } | { name: string; auto_publish_enabled?: boolean }[] | null;
 };
 
 function flowName(post: Draft) {
   const rel = post.autoposting_flows;
   if (Array.isArray(rel)) return rel[0]?.name || "Поток";
   return rel?.name || "Поток";
+}
+
+function flowAutoPublish(post: Draft) {
+  const rel = post.autoposting_flows;
+  if (Array.isArray(rel)) return rel[0]?.auto_publish_enabled === true;
+  return rel?.auto_publish_enabled === true;
+}
+
+function statusLabel(status: string) {
+  if (status === "failed") return "Ошибка публикации";
+  if (status === "approved") return "В очереди автопубликации";
+  return "Ожидает проверки";
 }
 
 export default function ModerationPanel() {
@@ -75,9 +87,10 @@ export default function ModerationPanel() {
     return () => { active = false; };
   }, [refresh]);
 
-  async function act(id: string, action: "publish" | "reject" | "rewrite") {
+  async function act(id: string, action: "publish" | "reject" | "rewrite" | "approve") {
     if (!organizationId) return;
     if (action === "publish" && !window.confirm("Опубликовать этот текст в канал потока? Публикация уйдёт сразу.")) return;
+    if (action === "approve" && !window.confirm("Поставить черновик в очередь автопубликации? Он уйдёт в канал по расписанию потока, не сразу.")) return;
     if (action === "reject" && !window.confirm("Отклонить этот черновик? Он больше не появится в очереди.")) return;
     setBusyId(id); setError(""); setNotice("");
     try {
@@ -90,9 +103,11 @@ export default function ModerationPanel() {
       if (!response.ok) throw new Error(data.error || "Не удалось выполнить действие.");
       if (action === "rewrite" && typeof data.draftText === "string") {
         setEdits((old) => ({ ...old, [id]: data.draftText }));
-        setNotice("Текст переписан. Проверьте черновик и опубликуйте вручную.");
+        setNotice("Текст переписан. Проверьте черновик и опубликуйте вручную или поставьте в очередь.");
       } else if (action === "publish") {
         setNotice(data.messageId ? `Публикация отправлена (сообщение ${data.messageId}).` : "Публикация отправлена.");
+      } else if (action === "approve") {
+        setNotice("Черновик поставлен в очередь автопубликации.");
       } else {
         setNotice("Черновик отклонён.");
       }
@@ -111,7 +126,7 @@ export default function ModerationPanel() {
       <div className="panel-head">
         <div>
           <h2>Модерация публикаций</h2>
-          <p>Черновики после AI-переписывания. Публикация в канал идёт только после явного одобрения — автопубликации нет.</p>
+          <p>Черновики после AI-переписывания. «Опубликовать» отправляет сразу. «Одобрить в очередь» появляется только у потоков с включённой автопубликацией.</p>
         </div>
         <div className="moderation-head-actions">
           <span className="pill warning">{pendingCount} на проверке</span>
@@ -134,8 +149,8 @@ export default function ModerationPanel() {
                   <b>{flowName(post)}</b>
                   <small>{new Date(post.created_at).toLocaleString("ru-RU", { timeZone: "Europe/Kyiv" })}</small>
                 </div>
-                <span className={post.status === "failed" ? "pill error" : "pill warning"}>
-                  {post.status === "failed" ? "Ошибка публикации" : "Ожидает проверки"}
+                <span className={post.status === "failed" ? "pill error" : post.status === "approved" ? "pill success" : "pill warning"}>
+                  {statusLabel(post.status)}
                 </span>
               </div>
               {post.source_url && (
@@ -176,13 +191,20 @@ export default function ModerationPanel() {
               </div>
               <div className="autoposting-flow-actions">
                 <button className="primary" onClick={() => act(post.id, "publish")} disabled={busy}>
-                  {busy ? <LoaderCircle className="spin" size={13}/> : <Send size={13}/>} Опубликовать
+                  {busy ? <LoaderCircle className="spin" size={13}/> : <Send size={13}/>} {post.status === "approved" ? "Опубликовать сейчас" : "Опубликовать"}
                 </button>
-                <button className="secondary" onClick={() => act(post.id, "rewrite")} disabled={busy}>
-                  <WandSparkles size={13}/> Переписать
-                </button>
+                {flowAutoPublish(post) && post.status !== "approved" ? (
+                  <button className="secondary" onClick={() => act(post.id, "approve")} disabled={busy}>
+                    <CheckCircle2 size={13}/> Одобрить в очередь
+                  </button>
+                ) : null}
+                {post.status !== "approved" ? (
+                  <button className="secondary" onClick={() => act(post.id, "rewrite")} disabled={busy}>
+                    <WandSparkles size={13}/> Переписать
+                  </button>
+                ) : null}
                 <button className="text-button danger" onClick={() => act(post.id, "reject")} disabled={busy}>
-                  <Trash2 size={13}/> Отклонить
+                  <Trash2 size={13}/> {post.status === "approved" ? "Убрать из очереди" : "Отклонить"}
                 </button>
               </div>
             </article>;

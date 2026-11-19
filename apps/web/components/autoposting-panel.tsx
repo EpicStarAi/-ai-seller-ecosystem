@@ -9,12 +9,16 @@ type Flow = {
   ai_prompt: string; use_ai_editor: boolean; generate_image: boolean; moderation_enabled: boolean;
   max_forwarding_enabled: boolean; schedule_mode: "interval" | "cron"; interval_minutes: number;
   cron_expression: string | null; status: string; prompt_id?: string | null; post_buttons?: { text: string; url: string }[][] | null;
+  auto_publish_enabled?: boolean; auto_publish_mode?: "interval" | "slots"; auto_publish_interval_minutes?: number;
+  auto_publish_slots?: string[]; auto_publish_timezone?: string | null; auto_publish_last_at?: string | null;
   telegram_channels?: { title: string; username: string | null } | null;
 };
 const blank = {
   id: "", name: "", channelId: "", sourceType: "web_search" as "web_search" | "telegram_channels",
   keywords: "", aiPrompt: "", promptId: "", useAiEditor: false, generateImage: false, moderationEnabled: false,
   maxForwardingEnabled: false, scheduleMode: "interval" as "interval" | "cron", intervalMinutes: 60, cronExpression: "",
+  autoPublishEnabled: false, autoPublishMode: "interval" as "interval" | "slots", autoPublishIntervalMinutes: 60,
+  autoPublishSlots: "", autoPublishTimezone: "Europe/Kyiv",
 };
 
 export default function AutopostingPanel() {
@@ -72,6 +76,11 @@ export default function AutopostingPanel() {
       moderationEnabled: flow.moderation_enabled, maxForwardingEnabled: flow.max_forwarding_enabled,
       scheduleMode: flow.schedule_mode, intervalMinutes: flow.interval_minutes || 60,
       cronExpression: flow.cron_expression || "",
+      autoPublishEnabled: flow.auto_publish_enabled === true,
+      autoPublishMode: flow.auto_publish_mode === "slots" ? "slots" : "interval",
+      autoPublishIntervalMinutes: flow.auto_publish_interval_minutes || 60,
+      autoPublishSlots: Array.isArray(flow.auto_publish_slots) ? flow.auto_publish_slots.join(", ") : "",
+      autoPublishTimezone: flow.auto_publish_timezone || "Europe/Kyiv",
     });
     setNotice("Поток загружен в форму редактирования.");
     setError("");
@@ -90,6 +99,11 @@ export default function AutopostingPanel() {
         aiPrompt: form.aiPrompt, promptId: form.promptId || null, useAiEditor: form.useAiEditor, generateImage: form.generateImage,
         moderationEnabled: form.moderationEnabled, maxForwardingEnabled: form.maxForwardingEnabled,
         scheduleMode: form.scheduleMode, intervalMinutes: Number(form.intervalMinutes), cronExpression: form.cronExpression,
+        autoPublishEnabled: form.autoPublishEnabled,
+        autoPublishMode: form.autoPublishMode,
+        autoPublishIntervalMinutes: Number(form.autoPublishIntervalMinutes),
+        autoPublishSlots: form.autoPublishSlots,
+        autoPublishTimezone: form.autoPublishTimezone,
       };
       const response = await fetch("/api/autoposting/flows", {
         method: form.id ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
@@ -167,11 +181,31 @@ export default function AutopostingPanel() {
           <input value={form.cronExpression} onChange={e => update("cronExpression", e.target.value)} placeholder="0 0/60 * * * ?" required/>
           <small>Синтаксис и проверку CRON согласуем с серверным планировщиком до активации.</small>
         </label>}
+        <fieldset className="autoposting-fieldset"><legend>Автопубликация одобренных постов</legend>
+          <label className="autoposting-check"><input type="checkbox" checked={form.autoPublishEnabled} onChange={e => update("autoPublishEnabled", e.target.checked)}/><span><b>Публиковать одобренные посты по расписанию</b><small>По умолчанию выключено: публикация только по кнопке «Опубликовать». Если включить, на модерации появится «Одобрить в очередь» — воркер отправит один одобренный пост, когда наступит интервал или слот.</small></span></label>
+          {form.autoPublishEnabled ? <>
+            <label className="autoposting-radio"><input type="radio" checked={form.autoPublishMode === "interval"} onChange={() => update("autoPublishMode", "interval")}/> Интервал (минимум 30 минут)</label>
+            <label className="autoposting-radio"><input type="radio" checked={form.autoPublishMode === "slots"} onChange={() => update("autoPublishMode", "slots")}/> Слоты времени</label>
+            {form.autoPublishMode === "interval" ? <label>Интервал автопубликации, минуты
+              <input type="number" min={30} max={43200} step={1} value={form.autoPublishIntervalMinutes} onChange={e => update("autoPublishIntervalMinutes", Number(e.target.value))} required/>
+            </label> : <label>Слоты (ЧЧ:ММ через запятую)
+              <input value={form.autoPublishSlots} onChange={e => update("autoPublishSlots", e.target.value)} placeholder="09:00, 13:00, 18:30" required/>
+              <small>Время в выбранном поясе, окно 2 минуты. За один слот уходит не больше одного одобренного поста.</small>
+            </label>}
+            <label>Часовой пояс
+              <select value={form.autoPublishTimezone} onChange={e => update("autoPublishTimezone", e.target.value)}>
+                <option value="Europe/Kyiv">Europe/Kyiv</option>
+                <option value="Europe/Berlin">Europe/Berlin</option>
+                <option value="UTC">UTC</option>
+              </select>
+            </label>
+          </> : null}
+        </fieldset>
         <div className="autoposting-actions">
           <button className="primary" type="submit" disabled={busy || channels.length === 0}>{busy ? <><LoaderCircle className="spin" size={14}/> Сохраняем…</> : <><Save size={14}/> {form.id ? "Сохранить изменения" : "Сохранить настройки потока"}</>}</button>
           {form.id && <button className="secondary" type="button" onClick={reset} disabled={busy}>Отмена</button>}
         </div>
-        <p className="autoposting-footnote"><Clock3 size={14}/> Пока сохраняется конфигурация. Автоматическая обработка и публикация не запускаются.</p>
+        <p className="autoposting-footnote"><Clock3 size={14}/> Автопубликация одобренных постов по умолчанию выключена и не включается сама. Расписание выше относится к настройке потока и не публикует посты без явного включения автопубликации.</p>
       </form>
     </section>
     <section className="panel">
@@ -180,6 +214,11 @@ export default function AutopostingPanel() {
         <div className="autoposting-flow-list">{flows.map(flow => <article className="autoposting-flow" key={flow.id}>
           <div className="autoposting-flow-head"><div><b>{flow.name}</b><small>{flow.telegram_channels?.title || "Telegram-канал"} · {flow.source_type === "web_search" ? "Поиск в интернете" : "Telegram-каналы"}</small></div><span className="pill warning">Черновик</span></div>
           <div className="autoposting-flow-meta">{flow.schedule_mode === "interval" ? `Каждые ${flow.interval_minutes} мин.` : `CRON: ${flow.cron_expression}`} · {(flow.keywords || []).length} ключевых тем</div>
+          <div className="autoposting-flow-meta">{flow.auto_publish_enabled
+            ? (flow.auto_publish_mode === "slots"
+              ? `Автопубликация: слоты ${(Array.isArray(flow.auto_publish_slots) ? flow.auto_publish_slots.join(", ") : "")} (${flow.auto_publish_timezone || "Europe/Kyiv"})`
+              : `Автопубликация: каждые ${flow.auto_publish_interval_minutes || 60} мин.`)
+            : "Автопубликация выключена — только ручная кнопка"}</div>
           {Array.isArray(flow.post_buttons) && flow.post_buttons.flat().length > 0 ? <div className="autoposting-flow-meta">Кнопки под постом: {flow.post_buttons.flat().map(b => b.text).filter(Boolean).join(" · ")}</div> : null}
           <div className="autoposting-flow-actions"><button className="text-button" onClick={() => edit(flow)}>Редактировать</button><button className="text-button danger" onClick={() => remove(flow.id)} disabled={busy}><Trash2 size={13}/> Удалить</button></div>
         </article>)}</div>}
