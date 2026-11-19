@@ -2,10 +2,11 @@ export const MEDIA_CAPTION_LIMIT = 1024;
 
 export type MediaKind = "photo" | "video";
 export type StoredMediaItem = { kind: MediaKind; mime: string; bytes: number; relpath: string };
-export type PostMedia = { present?: boolean; grouped?: boolean; items: StoredMediaItem[]; skipped: { reason: string }[] };
+export type IllustrationNote = { status: "generated" | "skipped"; reason?: string };
+export type PostMedia = { present?: boolean; grouped?: boolean; items: StoredMediaItem[]; skipped: { reason: string }[]; illustration?: IllustrationNote };
 export type PublishStep = { method: "sendPhoto" | "sendVideo" | "sendMediaGroup" | "sendMessage"; caption: boolean; buttons: boolean; count: number };
 
-export const MEDIA_RELPATH_RE = /^[0-9a-f-]{36}\/[0-9]{1,20}\/\d{1,2}\.(jpg|jpeg|png|webp|mp4|mov)$/i;
+export const MEDIA_RELPATH_RE = /^(?:[0-9a-f-]{36}\/[0-9]{1,20}\/\d{1,2}|generated\/[0-9a-f-]{36}\/[0-9a-f-]{36})\.(jpg|jpeg|png|webp|mp4|mov)$/i;
 
 function asItem(value: unknown): StoredMediaItem | null {
   if (!value || typeof value !== "object") return null;
@@ -28,7 +29,16 @@ export function parsePostMedia(value: unknown): PostMedia {
     ? inner.skipped.flatMap((row) => row && typeof row === "object" && typeof (row as { reason?: unknown }).reason === "string"
       ? [{ reason: (row as { reason: string }).reason }] : [])
     : [];
-  return { present: items.length > 0 || skipped.length > 0 || inner.present === true, grouped: inner.grouped === true || items.length > 1, items, skipped };
+  let illustration: IllustrationNote | undefined;
+  const rawNote = inner.illustration && typeof inner.illustration === "object" ? inner.illustration as { status?: unknown; reason?: unknown } : null;
+  if (rawNote && (rawNote.status === "generated" || rawNote.status === "skipped")) {
+    illustration = { status: rawNote.status, reason: typeof rawNote.reason === "string" ? rawNote.reason : undefined };
+  } else if (inner.illustration_skipped && typeof inner.illustration_skipped === "object") {
+    const reason = (inner.illustration_skipped as { reason?: unknown }).reason;
+    illustration = { status: "skipped", reason: typeof reason === "string" ? reason : "skipped" };
+  }
+  return { present: items.length > 0 || skipped.length > 0 || inner.present === true, grouped: inner.grouped === true || items.length > 1, items, skipped, illustration };
+
 }
 
 export function extractContentMedia(metadata: unknown): PostMedia {

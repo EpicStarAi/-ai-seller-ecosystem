@@ -8,8 +8,8 @@
  *   node worker.mjs
  *   node worker.mjs --dry-run-publish
  */
-import { createDecipheriv } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { createDecipheriv, randomUUID } from "node:crypto";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 const AD_RULES = [
@@ -245,6 +245,96 @@ function buttonMarkup(postButtons, sourceUrl) {
 }
 
 
+
+const MEDIA_RELPATH_RE = /^(?:[0-9a-f-]{36}\/[0-9]{1,20}\/\d{1,2}|generated\/[0-9a-f-]{36}\/[0-9a-f-]{36})\.(jpg|jpeg|png|webp|mp4|mov)$/i;
+
+function illustrationPrompt(draftText) {
+  const sample = (draftText || "").trim().slice(0, 1200) || "a news update";
+  return [
+    "Create a single tasteful illustration for a Telegram news post.",
+    "No captions, logos, watermarks, or readable text in the image.",
+    "Photoreal or clean editorial style, 16:9 or square composition.",
+    "Scene inspired by this post:",
+    sample,
+  ].join("\n");
+}
+
+async function requestOpenAIImage(secret, prompt) {
+  const attempts = [
+    { body: { model: "dall-e-3", prompt, size: "1024x1024", response_format: "b64_json" } },
+    { body: { model: "gpt-image-1", prompt, size: "1024x1024" } },
+  ];
+  let lastError = "image provider rejected the request";
+  for (const attempt of attempts) {
+    const response = await fetch("https://api.openai.com/v1/images/generations", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${secret}`, "Content-Type": "application/json" },
+      body: JSON.stringify(attempt.body),
+      signal: AbortSignal.timeout(90000),
+    });
+    const result = await response.json();
+    if (!response.ok) {
+      lastError = `image_provider_http_${response.status}`;
+      continue;
+    }
+    const row = result?.data?.[0];
+    if (row?.b64_json) {
+      const bytes = Buffer.from(row.b64_json, "base64");
+      if (!bytes.length || bytes.length > 10 * 1024 * 1024) throw new Error("image_too_large");
+      return bytes;
+    }
+    if (typeof row?.url === "string" && /^https:\/\//i.test(row.url)) {
+      const imageResponse = await fetch(row.url, { signal: AbortSignal.timeout(60000) });
+      if (!imageResponse.ok) { lastError = "image_download_failed"; continue; }
+      const bytes = Buffer.from(await imageResponse.arrayBuffer());
+      if (!bytes.length || bytes.length > 10 * 1024 * 1024) throw new Error("image_too_large");
+      return bytes;
+    }
+    lastError = "empty_image_response";
+  }
+  throw new Error(lastError);
+}
+
+function saveIllustration(contentItemId, bytes) {
+  if (!/^[0-9a-f-]{36}$/i.test(contentItemId)) throw new Error("invalid_content_item");
+  const relpath = `generated/${contentItemId.toLowerCase()}/${randomUUID()}.png`;
+  if (!MEDIA_RELPATH_RE.test(relpath)) throw new Error("invalid_media_path");
+  const root = resolve(process.env.TG_MEDIA_ROOT || "/var/lib/ai-seller-telegram-listener/media");
+  const full = resolve(root, relpath);
+  if (full !== root && !full.startsWith(`${root}/`)) throw new Error("invalid_media_path");
+  mkdirSync(resolve(root, "generated", contentItemId.toLowerCase()), { mode: 0o750, recursive: true });
+  writeFileSync(full, bytes, { mode: 0o640 });
+  return { kind: "photo", mime: "image/png", bytes: bytes.length, relpath };
+}
+
+async function maybeIllustrate(generateImage, openaiSecret, draftText, contentItemId, mediaIn) {
+  const media = mediaIn && typeof mediaIn === "object"
+    ? { ...mediaIn, items: Array.isArray(mediaIn.items) ? [...mediaIn.items] : [], skipped: Array.isArray(mediaIn.skipped) ? [...mediaIn.skipped] : [] }
+    : { items: [], skipped: [] };
+  if (!generateImage) return media;
+  if (!openaiSecret) {
+    media.illustration = { status: "skipped", reason: "no_image_provider" };
+    return media;
+  }
+  if (media.items.length >= 10) {
+    media.illustration = { status: "skipped", reason: "album_full" };
+    return media;
+  }
+  try {
+    const bytes = await requestOpenAIImage(openaiSecret, illustrationPrompt(draftText));
+    const item = saveIllustration(contentItemId, bytes);
+    media.items.push(item);
+    media.present = true;
+    media.grouped = media.items.length > 1;
+    media.illustration = { status: "generated" };
+    return media;
+  } catch (error) {
+    media.illustration = { status: "skipped", reason: "provider_error" };
+    log("rewrite: illustration skipped", error instanceof Error ? error.message : "error");
+    return media;
+  }
+}
+
 function extractMedia(metadata) {
   if (!metadata || typeof metadata !== "object") return {};
   if (metadata.media && typeof metadata.media === "object") return metadata.media;
@@ -268,7 +358,7 @@ async function rewriteOnce() {
     if (processed >= 8) break;
     let flow = flowCache.get(item.flow_id);
     if (!flow) {
-      const rows = await sb(`autoposting_flows?id=eq.${item.flow_id}&select=id,organization_id,ai_prompt,prompt_id,source_type,channel_id,post_buttons,name`);
+      const rows = await sb(`autoposting_flows?id=eq.${item.flow_id}&select=id,organization_id,ai_prompt,prompt_id,source_type,channel_id,post_buttons,name,generate_image`);
       flow = rows?.[0];
       if (flow) flowCache.set(item.flow_id, flow);
     }
@@ -315,6 +405,14 @@ async function rewriteOnce() {
         rewriteSystemPrompt(promptText),
         original,
       );
+      const openai = providers.find((row) => row.provider === "openai" && row.secret);
+      const media = await maybeIllustrate(
+        flow.generate_image === true,
+        openai?.secret || null,
+        generated.text,
+        item.id,
+        extractMedia(item.metadata),
+      );
       await sb("autoposting_posts", {
         method: "POST",
         prefer: "return=minimal,resolution=ignore-duplicates",
@@ -326,7 +424,7 @@ async function rewriteOnce() {
           original_text: original.slice(0, 20000),
           draft_text: generated.text,
           source_url: item.source_url || null,
-          media: extractMedia(item.metadata),
+          media,
           provider: generated.provider,
           model: generated.model,
           updated_at: now,
@@ -335,7 +433,7 @@ async function rewriteOnce() {
       pending += 1;
       processed += 1;
       seen.add(key);
-      log("rewrite: draft ready", generated.provider, generated.model);
+      log("rewrite: draft ready", generated.provider, generated.model, media.illustration || "no_illustration");
     } catch (error) {
       log("rewrite: all providers or insert failed, will retry later", error instanceof Error ? error.message : "error");
       // Keep going so later items (including auto-rejected ads) are not stuck behind one AI failure.
@@ -466,7 +564,7 @@ function mediaRoot() {
 }
 
 function readStoredMedia(relpath) {
-  if (!/^[0-9a-f-]{36}\/[0-9]{1,20}\/\d{1,2}\.(jpg|jpeg|png|webp|mp4|mov)$/i.test(relpath)) return null;
+  if (!/^(?:[0-9a-f-]{36}\/[0-9]{1,20}\/\d{1,2}|generated\/[0-9a-f-]{36}\/[0-9a-f-]{36})\.(jpg|jpeg|png|webp|mp4|mov)$/i.test(relpath)) return null;
   const root = resolve(mediaRoot());
   const full = resolve(root, relpath);
   if (full !== root && !full.startsWith(`${root}/`)) return null;

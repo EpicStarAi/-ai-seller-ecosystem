@@ -5,6 +5,7 @@ import { generateText, rewriteSystemPrompt, type ChatProvider } from "@/lib/ai/g
 import { buildPostReplyMarkup } from "@/lib/telegram/post-buttons";
 import { MEDIA_CAPTION_LIMIT, parsePostMedia, planPublish } from "@/lib/autoposting/media";
 import { readMediaFile } from "@/lib/autoposting/media-server";
+import { maybeIllustrate } from "@/lib/autoposting/illustrate";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -128,7 +129,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       return NextResponse.json({ error: "Этот черновик нельзя переписать." }, { status: 409 });
     }
     const { data: flow } = await ctx.supabase.from("autoposting_flows")
-      .select("ai_prompt,prompt_id").eq("id", post.flow_id).eq("organization_id", ctx.organizationId).maybeSingle();
+      .select("ai_prompt,prompt_id,generate_image").eq("id", post.flow_id).eq("organization_id", ctx.organizationId).maybeSingle();
     if (!flow) return NextResponse.json({ error: "Поток не найден." }, { status: 404 });
     try {
       let promptText = flow.ai_prompt || "";
@@ -144,12 +145,30 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         systemPrompt: rewriteSystemPrompt(promptText),
         userText: post.original_text || "[Публикация без текста]",
       });
+      let media = parsePostMedia(post.media);
+      if (flow.generate_image) {
+        const openaiSecret = await resolveSecret(ctx.supabase, ctx.organizationId, "openai");
+        media = await maybeIllustrate({
+          generateImage: true,
+          openaiSecret,
+          draftText: generated.text,
+          contentItemId: post.content_item_id,
+          media,
+        });
+      }
       const { error } = await ctx.supabase.from("autoposting_posts").update({
         draft_text: generated.text, provider: generated.provider, model: generated.model,
-        status: "pending_review", last_error: null, updated_at: now,
+        media, status: "pending_review", last_error: null, updated_at: now,
       }).eq("id", post.id).eq("organization_id", ctx.organizationId);
       if (error) return NextResponse.json({ error: "Не удалось сохранить новый текст." }, { status: 500 });
-      return NextResponse.json({ ok: true, status: "pending_review", draftText: generated.text, provider: generated.provider, model: generated.model });
+      return NextResponse.json({
+        ok: true,
+        status: "pending_review",
+        draftText: generated.text,
+        provider: generated.provider,
+        model: generated.model,
+        illustration: media.illustration || null,
+      });
     } catch (error) {
       const status = typeof error === "object" && error && "status" in error ? Number((error as { status?: number }).status) || 502 : 502;
       const message = error instanceof Error ? error.message : "Не удалось переписать текст.";

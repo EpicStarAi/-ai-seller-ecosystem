@@ -42,6 +42,13 @@ function statusLabel(status: string) {
   return "Ожидает проверки";
 }
 
+function illustrationReason(reason?: string) {
+  if (reason === "no_image_provider") return "Иллюстрация пропущена: провайдер изображений не подключён.";
+  if (reason === "provider_error") return "Иллюстрация пропущена: ошибка провайдера.";
+  if (reason === "album_full") return "Иллюстрация пропущена: в альбоме уже 10 файлов.";
+  return "Иллюстрация пропущена.";
+}
+
 export default function ModerationPanel() {
   const [organizationId, setOrganizationId] = useState("");
   const [posts, setPosts] = useState<Draft[]>([]);
@@ -103,7 +110,10 @@ export default function ModerationPanel() {
       if (!response.ok) throw new Error(data.error || "Не удалось выполнить действие.");
       if (action === "rewrite" && typeof data.draftText === "string") {
         setEdits((old) => ({ ...old, [id]: data.draftText }));
-        setNotice("Текст переписан. Проверьте черновик и опубликуйте вручную или поставьте в очередь.");
+        const illustration = data.illustration as { status?: string; reason?: string } | undefined;
+        if (illustration?.status === "generated") setNotice("Текст переписан, добавлена AI-иллюстрация. Проверьте черновик.");
+        else if (illustration?.status === "skipped") setNotice(`Текст переписан. ${illustrationReason(illustration.reason)}`);
+        else setNotice("Текст переписан. Проверьте черновик и опубликуйте вручную или поставьте в очередь.");
       } else if (action === "publish") {
         setNotice(data.messageId ? `Публикация отправлена (сообщение ${data.messageId}).` : "Публикация отправлена.");
       } else if (action === "approve") {
@@ -160,7 +170,7 @@ export default function ModerationPanel() {
               )}
               {(() => {
                 const media = parsePostMedia(post.media);
-                if (!media.items.length && !media.skipped.length) return null;
+                if (!media.items.length && !media.skipped.length && !media.illustration) return null;
                 return <div className="moderation-media">
                   {media.items.map((item, index) => {
                     const src = `/api/autoposting/posts/${encodeURIComponent(post.id)}/media/${index}?organizationId=${encodeURIComponent(organizationId)}`;
@@ -169,6 +179,8 @@ export default function ModerationPanel() {
                       : <img key={item.relpath} className="moderation-media-item" alt="" src={src} />;
                   })}
                   {media.skipped.length > 0 && <small>Часть медиа донора не сохранена ({media.skipped.length}).</small>}
+                  {media.illustration?.status === "skipped" ? <small>{illustrationReason(media.illustration.reason)}</small> : null}
+                  {media.illustration?.status === "generated" ? <small>Добавлена AI-иллюстрация.</small> : null}
                 </div>;
               })()}
               {post.last_error && <div className="integration-alert error"><AlertCircle size={16}/><span>{post.last_error}</span></div>}
