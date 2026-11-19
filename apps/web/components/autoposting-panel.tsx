@@ -8,7 +8,8 @@ type Flow = {
   id: string; name: string; channel_id: string; source_type: "web_search" | "telegram_channels"; keywords: string[];
   ai_prompt: string; use_ai_editor: boolean; generate_image: boolean; moderation_enabled: boolean;
   max_forwarding_enabled: boolean; schedule_mode: "interval" | "cron"; interval_minutes: number;
-  cron_expression: string | null; status: string; telegram_channels?: { title: string; username: string | null } | null;
+  cron_expression: string | null; status: string; post_buttons?: { text: string; url: string }[][] | null;
+  telegram_channels?: { title: string; username: string | null } | null;
 };
 const blank = {
   id: "", name: "", channelId: "", sourceType: "web_search" as "web_search" | "telegram_channels",
@@ -168,6 +169,7 @@ export default function AutopostingPanel() {
         <div className="autoposting-flow-list">{flows.map(flow => <article className="autoposting-flow" key={flow.id}>
           <div className="autoposting-flow-head"><div><b>{flow.name}</b><small>{flow.telegram_channels?.title || "Telegram-канал"} · {flow.source_type === "web_search" ? "Поиск в интернете" : "Telegram-каналы"}</small></div><span className="pill warning">Черновик</span></div>
           <div className="autoposting-flow-meta">{flow.schedule_mode === "interval" ? `Каждые ${flow.interval_minutes} мин.` : `CRON: ${flow.cron_expression}`} · {(flow.keywords || []).length} ключевых тем</div>
+          {Array.isArray(flow.post_buttons) && flow.post_buttons.flat().length > 0 ? <div className="autoposting-flow-meta">Кнопки под постом: {flow.post_buttons.flat().map(b => b.text).filter(Boolean).join(" · ")}</div> : null}
           <div className="autoposting-flow-actions"><button className="text-button" onClick={() => edit(flow)}>Редактировать</button><button className="text-button danger" onClick={() => remove(flow.id)} disabled={busy}><Trash2 size={13}/> Удалить</button></div>
         </article>)}</div>}
     </section>

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { parsePostButtons } from "@/lib/telegram/post-buttons";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -34,17 +35,21 @@ function parsePayload(body: any) {
     return { error: "Интервал должен быть целым числом от 30 до 43200 минут." };
   }
   if (scheduleMode === "cron" && !cronExpression) return { error: "Укажите CRON-выражение." };
-  return {
-    value: {
-      name, channel_id: channelId, source_type: sourceType, keywords, ai_prompt: aiPrompt,
-      use_ai_editor: body.useAiEditor === true, generate_image: body.generateImage === true,
-      moderation_enabled: body.moderationEnabled === true,
-      // MAX is recorded as a preference only; no MAX connector is active in this deployment.
-      max_forwarding_enabled: body.maxForwardingEnabled === true,
-      schedule_mode: scheduleMode, interval_minutes: scheduleMode === "interval" ? intervalMinutes : 60,
-      cron_expression: scheduleMode === "cron" ? cronExpression : null,
-    },
+  const value: Record<string, unknown> = {
+    name, channel_id: channelId, source_type: sourceType, keywords, ai_prompt: aiPrompt,
+    use_ai_editor: body.useAiEditor === true, generate_image: body.generateImage === true,
+    moderation_enabled: body.moderationEnabled === true,
+    // MAX is recorded as a preference only; no MAX connector is active in this deployment.
+    max_forwarding_enabled: body.maxForwardingEnabled === true,
+    schedule_mode: scheduleMode, interval_minutes: scheduleMode === "interval" ? intervalMinutes : 60,
+    cron_expression: scheduleMode === "cron" ? cronExpression : null,
   };
+  if (Object.prototype.hasOwnProperty.call(body, "postButtons") || Object.prototype.hasOwnProperty.call(body, "post_buttons")) {
+    const parsedButtons = parsePostButtons(body.postButtons ?? body.post_buttons);
+    if (!Array.isArray(parsedButtons)) return { error: parsedButtons.error };
+    value.post_buttons = parsedButtons;
+  }
+  return { value };
 }
 
 export async function GET(request: Request) {
@@ -53,7 +58,7 @@ export async function GET(request: Request) {
   const ctx = await access(request, organizationId);
   if ("response" in ctx) return ctx.response;
   const { data, error } = await ctx.supabase.from("autoposting_flows")
-    .select("id,name,channel_id,source_type,keywords,ai_prompt,use_ai_editor,generate_image,moderation_enabled,max_forwarding_enabled,schedule_mode,interval_minutes,cron_expression,status,created_at,updated_at,telegram_channels(title,username)")
+    .select("id,name,channel_id,source_type,keywords,ai_prompt,use_ai_editor,generate_image,moderation_enabled,max_forwarding_enabled,schedule_mode,interval_minutes,cron_expression,status,post_buttons,created_at,updated_at,telegram_channels(title,username)")
     .eq("organization_id", organizationId).order("created_at", { ascending: false });
   if (error) return NextResponse.json({ error: "Не удалось загрузить потоки автопостинга." }, { status: 500 });
   return NextResponse.json({ flows: data ?? [] });
