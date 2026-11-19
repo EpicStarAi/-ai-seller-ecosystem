@@ -180,23 +180,45 @@ async function generateText(provider, secret, model, systemPrompt, userText) {
     signal: AbortSignal.timeout(provider === "ollama" ? 180000 : 60000),
   });
   const result = await response.json();
-  if (!response.ok) throw new Error(`provider_http_${response.status}`);
+  if (!response.ok) throw new Error(`${provider}_http_${response.status}`);
   const text = String(parseAnswer(provider, result) || "").trim();
   if (!text) throw new Error("empty_provider_answer");
   return { text: text.slice(0, 4000), provider, model };
 }
 
-async function loadProvider(organizationId) {
+async function loadProviders(organizationId) {
   const integrations = await sb(`integrations?organization_id=eq.${organizationId}&status=eq.connected&kind=in.(openai,anthropic,gemini)&select=id,kind`);
-  const order = ["openai", "anthropic", "gemini"];
-  const chosen = order.map((kind) => (integrations || []).find((row) => row.kind === kind)).find(Boolean);
-  if (chosen) {
-    const secrets = await sb(`integration_secrets?integration_id=eq.${chosen.id}&select=nonce,ciphertext`);
-    if (!secrets?.[0]) throw new Error(`missing_secret_for_${chosen.kind}`);
-    const secret = decryptSecret(secrets[0].nonce, secrets[0].ciphertext, organizationId, chosen.kind);
-    return { provider: chosen.kind, secret, model: DEFAULT_MODELS[chosen.kind] };
+  const candidates = [];
+  for (const kind of ["openai", "anthropic", "gemini"]) {
+    const chosen = (integrations || []).find((row) => row.kind === kind);
+    if (!chosen) continue;
+    try {
+      const secrets = await sb(`integration_secrets?integration_id=eq.${chosen.id}&select=nonce,ciphertext`);
+      if (!secrets?.[0]) {
+        log("rewrite: skipping provider, missing secret", kind);
+        continue;
+      }
+      const secret = decryptSecret(secrets[0].nonce, secrets[0].ciphertext, organizationId, kind);
+      candidates.push({ provider: kind, secret, model: DEFAULT_MODELS[kind] });
+    } catch (error) {
+      log("rewrite: skipping provider", kind, error instanceof Error ? error.message : "error");
+    }
   }
-  return { provider: "ollama", secret: "", model: DEFAULT_MODELS.ollama };
+  candidates.push({ provider: "ollama", secret: "", model: DEFAULT_MODELS.ollama });
+  return candidates;
+}
+
+async function generateWithFallback(providers, systemPrompt, userText) {
+  let lastError = "no_provider";
+  for (const cfg of providers) {
+    try {
+      return await generateText(cfg.provider, cfg.secret, cfg.model, systemPrompt, userText);
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : "error";
+      log("rewrite: provider failed, trying next", cfg.provider, lastError);
+    }
+  }
+  throw new Error(lastError);
 }
 
 function buttonMarkup(postButtons, sourceUrl) {
@@ -270,15 +292,13 @@ async function rewriteOnce() {
       continue;
     }
     try {
-      let providerCfg = providerCache.get(item.organization_id);
-      if (!providerCfg) {
-        providerCfg = await loadProvider(item.organization_id);
-        providerCache.set(item.organization_id, providerCfg);
+      let providers = providerCache.get(item.organization_id);
+      if (!providers) {
+        providers = await loadProviders(item.organization_id);
+        providerCache.set(item.organization_id, providers);
       }
-      const generated = await generateText(
-        providerCfg.provider,
-        providerCfg.secret,
-        providerCfg.model,
+      const generated = await generateWithFallback(
+        providers,
         rewriteSystemPrompt(flow.ai_prompt),
         original,
       );
@@ -304,8 +324,9 @@ async function rewriteOnce() {
       seen.add(key);
       log("rewrite: draft ready", generated.provider, generated.model);
     } catch (error) {
-      log("rewrite: provider or insert failed, will retry later", error instanceof Error ? error.message : "error");
-      break;
+      log("rewrite: all providers or insert failed, will retry later", error instanceof Error ? error.message : "error");
+      // Keep going so later items (including auto-rejected ads) are not stuck behind one AI failure.
+      continue;
     }
   }
   log("rewrite done", { processed, pending, rejected, skipped });
