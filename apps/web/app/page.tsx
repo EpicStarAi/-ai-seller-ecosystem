@@ -63,21 +63,14 @@ export default function Home() {
   const [agents, setAgents] = useState<any[]>([]);
   useEffect(() => { fetch("/api/agents", { cache: "no-store" }).then(r => r.json()).then(d => setAgents(d.agents || [])).catch(() => setAgents([])); }, []);
   useEffect(() => {
+    // Read ?section=moderation once for a deep link. Do not write the query string:
+    // Next.js App Router patches history.replaceState and a search-param write
+    // remounts this client page, which resets section state and leaves panels
+    // stuck on their loading screen.
     try {
       if (new URLSearchParams(window.location.search).get("section") === "moderation") setActive("Модерация");
     } catch {}
   }, []);
-  useEffect(() => {
-    try {
-      const url = new URL(window.location.href);
-      if (active === "Модерация") url.searchParams.set("section", "moderation");
-      else url.searchParams.delete("section");
-      const next = url.pathname + url.search + url.hash;
-      if (next !== window.location.pathname + window.location.search + window.location.hash) {
-        window.history.replaceState({}, "", next);
-      }
-    } catch {}
-  }, [active]);
   const [showAgentForm, setShowAgentForm] = useState(false);
   const [agentName, setAgentName] = useState("");
   const [agentRole, setAgentRole] = useState("");
