@@ -3,7 +3,8 @@ import { createClient } from "@/lib/supabase/server";
 import { decryptIntegrationSecret } from "@/lib/integrations/crypto";
 import { generateText, rewriteSystemPrompt, type ChatProvider } from "@/lib/ai/generate";
 import { buildPostReplyMarkup } from "@/lib/telegram/post-buttons";
-import { MEDIA_CAPTION_LIMIT, parsePostMedia, planPublish, readMediaFile } from "@/lib/autoposting/media";
+import { MEDIA_CAPTION_LIMIT, parsePostMedia, planPublish } from "@/lib/autoposting/media";
+import { readMediaFile } from "@/lib/autoposting/media-server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

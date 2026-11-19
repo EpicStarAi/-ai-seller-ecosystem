@@ -1,7 +1,8 @@
 import { readFile } from "node:fs/promises";
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { parsePostMedia, resolveMediaFile } from "@/lib/autoposting/media";
+import { parsePostMedia } from "@/lib/autoposting/media";
+import { resolveMediaFile } from "@/lib/autoposting/media-server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
