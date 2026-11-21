@@ -8,10 +8,13 @@ __pycache__/
 .ruff_cache/
 .venv/
 venv/
-node_modules/
+node_modules
 .next/
 dist/
 build/
 coverage.xml
 htmlcov/
 .DS_Store
+
+# TypeScript incremental compiler cache
+*.tsbuildinfo
