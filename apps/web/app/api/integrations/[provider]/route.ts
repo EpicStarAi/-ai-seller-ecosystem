@@ -32,9 +32,21 @@ export async function POST(
   if ("response" in ctx) return ctx.response;
   const { supabase, organizationId } = ctx;
 
-  const { data: integration, error: integrationError } = await supabase.from("integrations")
-    .select("id,kind").eq("organization_id", organizationId).eq("kind", provider).single();
-  if (integrationError || !integration) return NextResponse.json({ error: "Интеграция не подключена." }, { status: 404 });
+  const integrationId = new URL(request.url).searchParams.get("integrationId") || "";
+  const query = supabase.from("integrations").select("id,kind")
+    .eq("organization_id", organizationId).eq("kind", provider);
+  let integration: { id: string; kind: string } | null = null;
+  if (integrationId) {
+    const { data } = await query.eq("id", integrationId).maybeSingle();
+    integration = data;
+  } else {
+    const { data } = await query.limit(2);
+    if ((data ?? []).length > 1) {
+      return NextResponse.json({ error: "Укажите integrationId: подключено несколько аккаунтов этого провайдера." }, { status: 409 });
+    }
+    integration = data?.[0] ?? null;
+  }
+  if (!integration) return NextResponse.json({ error: "Интеграция не подключена." }, { status: 404 });
 
   const { data: stored, error: secretError } = await supabase.from("integration_secrets")
     .select("nonce,ciphertext").eq("integration_id", integration.id).single();
@@ -75,8 +87,27 @@ export async function DELETE(
   if (!["owner", "admin"].includes(ctx.role)) {
     return NextResponse.json({ error: "Нужны права владельца или администратора." }, { status: 403 });
   }
-  const { error } = await ctx.supabase.from("integrations").delete()
+  const integrationId = new URL(request.url).searchParams.get("integrationId") || "";
+  const query = ctx.supabase.from("integrations").select("id")
     .eq("organization_id", ctx.organizationId).eq("kind", provider);
+  let targetId = integrationId;
+  if (!targetId) {
+    const { data } = await query.limit(2);
+    if ((data ?? []).length > 1) {
+      return NextResponse.json({ error: "Укажите integrationId: подключено несколько аккаунтов этого провайдера." }, { status: 409 });
+    }
+    targetId = data?.[0]?.id ?? "";
+  }
+  if (!targetId) return NextResponse.json({ error: "Интеграция не найдена." }, { status: 404 });
+  if (provider === "telegram") {
+    const { count } = await ctx.supabase.from("telegram_channels").select("id", { count: "exact", head: true })
+      .eq("organization_id", ctx.organizationId).eq("integration_id", targetId);
+    if ((count ?? 0) > 0) {
+      return NextResponse.json({ error: "Сначала удалите или переназначьте каналы, связанные с этим ботом." }, { status: 409 });
+    }
+  }
+  const { error } = await ctx.supabase.from("integrations").delete()
+    .eq("id", targetId).eq("organization_id", ctx.organizationId).eq("kind", provider);
   if (error) return NextResponse.json({ error: "Не удалось отключить интеграцию." }, { status: 500 });
   return new NextResponse(null, { status: 204 });
 }

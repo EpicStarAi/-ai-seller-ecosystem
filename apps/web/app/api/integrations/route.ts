@@ -78,8 +78,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Серверное хранилище ключей не настроено." }, { status: 503 });
   }
 
-  const { data: existing } = await supabase.from("integrations").select("id")
-    .eq("organization_id", organizationId).eq("kind", provider).limit(1).maybeSingle();
+  // Telegram supports multiple bot identities per organization.
+  const existingQuery = supabase.from("integrations").select("id")
+    .eq("organization_id", organizationId).eq("kind", provider);
+  const { data: existing } = provider === "telegram"
+    ? await existingQuery.eq("external_account_id", verified.externalAccountId).maybeSingle()
+    : await existingQuery.limit(1).maybeSingle();
   const secretId = randomUUID();
   let integrationId = existing?.id as string | undefined;
 

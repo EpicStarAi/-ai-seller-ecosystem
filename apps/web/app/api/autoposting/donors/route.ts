@@ -20,10 +20,10 @@ async function context(request: Request, adminOnly = false) {
   return { supabase, user, organizationId };
 }
 
-async function telegramToken(supabase: Awaited<ReturnType<typeof createClient>>, organizationId: string) {
+async function telegramToken(supabase: Awaited<ReturnType<typeof createClient>>, organizationId: string, integrationId: string) {
   const { data: integration, error: integrationError } = await supabase.from("integrations")
-    .select("id").eq("organization_id", organizationId).eq("kind", "telegram").maybeSingle();
-  if (integrationError || !integration) throw new Error("Telegram Bot API не подключён.");
+    .select("id").eq("id", integrationId).eq("organization_id", organizationId).eq("kind", "telegram").maybeSingle();
+  if (integrationError || !integration) throw new Error("Telegram-бот целевого канала не подключён.");
   const { data: secret, error: secretError } = await supabase.from("integration_secrets")
     .select("nonce,ciphertext").eq("integration_id", integration.id).maybeSingle();
   if (secretError || !secret) throw new Error("Telegram credential не найден.");
@@ -66,13 +66,16 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Укажите поток и @username, ссылку t.me/канал или числовой Telegram Chat ID." }, { status: 422 });
   }
   const { data: flow, error: flowError } = await ctx.supabase.from("autoposting_flows")
-    .select("id,source_type").eq("id", flowId).eq("organization_id", ctx.organizationId).maybeSingle();
+    .select("id,source_type,channel_id").eq("id", flowId).eq("organization_id", ctx.organizationId).maybeSingle();
   if (flowError || !flow) return NextResponse.json({ error: "Поток не найден в этом рабочем пространстве." }, { status: 404 });
   if (flow.source_type !== "telegram_channels") return NextResponse.json({ error: "У этого потока выбран источник «Поиск по интернету». Создайте отдельный поток с источником Telegram-каналы." }, { status: 409 });
+  const { data: targetChannel } = await ctx.supabase.from("telegram_channels")
+    .select("integration_id").eq("id", flow.channel_id).eq("organization_id", ctx.organizationId).maybeSingle();
+  if (!targetChannel?.integration_id) return NextResponse.json({ error: "У целевого канала не найден Telegram-бот." }, { status: 409 });
   let chatRef = chat;
   if (/^https?:\/\/t\.me\//i.test(chat)) chatRef = "@" + chat.replace(/^https?:\/\/t\.me\//i, "").split(/[/?#]/)[0];
   try {
-    const token = await telegramToken(ctx.supabase, ctx.organizationId);
+    const token = await telegramToken(ctx.supabase, ctx.organizationId, targetChannel.integration_id);
     const me = await telegram(token, "getMe") as { id: number };
     const info = await telegram(token, "getChat", { chat_id: chatRef }) as { id: number; type: string; title?: string; username?: string };
     if (info.type !== "channel") return NextResponse.json({ error: "Ссылка ведёт не на Telegram-канал." }, { status: 422 });

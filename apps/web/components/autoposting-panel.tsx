@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { AlertCircle, CheckCircle2, Clock3, LoaderCircle, Plus, RefreshCw, Save, Trash2 } from "lucide-react";
 
-type Channel = { id: string; title: string; username: string | null; can_post_messages: boolean };
+type Channel = { id: string; integration_id: string; title: string; username: string | null; can_post_messages: boolean };
 type Flow = {
   id: string; name: string; channel_id: string; source_type: "web_search" | "telegram_channels"; keywords: string[];
   ai_prompt: string; use_ai_editor: boolean; generate_image: boolean; moderation_enabled: boolean;
@@ -24,6 +24,7 @@ const blank = {
 export default function AutopostingPanel() {
   const [organizationId, setOrganizationId] = useState("");
   const [channels, setChannels] = useState<Channel[]>([]);
+  const [botLabels, setBotLabels] = useState<Record<string, string>>({});
   const [flows, setFlows] = useState<Flow[]>([]);
   const [form, setForm] = useState(blank);
   const [loading, setLoading] = useState(true);
@@ -33,17 +34,28 @@ export default function AutopostingPanel() {
   const [prompts, setPrompts] = useState<{ id: string; name: string }[]>([]);
 
   const refresh = useCallback(async (org: string) => {
-    const [channelResponse, flowResponse, promptResponse] = await Promise.all([
+    const [channelResponse, flowResponse, promptResponse, integrationsResponse] = await Promise.all([
       fetch(`/api/telegram/channels?organizationId=${encodeURIComponent(org)}`, { cache: "no-store" }),
       fetch(`/api/autoposting/flows?organizationId=${encodeURIComponent(org)}`, { cache: "no-store" }),
       fetch(`/api/autoposting/prompts?organizationId=${encodeURIComponent(org)}`, { cache: "no-store" }),
+      fetch(`/api/integrations?organizationId=${encodeURIComponent(org)}`, { cache: "no-store" }),
     ]);
     const channelData = await channelResponse.json();
     const flowData = await flowResponse.json();
     const promptData = await promptResponse.json();
+    const integrationsData = await integrationsResponse.json();
     if (!channelResponse.ok) throw new Error(channelData.error || "Не удалось загрузить Telegram-каналы.");
     if (!flowResponse.ok) throw new Error(flowData.error || "Не удалось загрузить потоки.");
     if (!promptResponse.ok) throw new Error(promptData.error || "Не удалось загрузить промпты.");
+    if (!integrationsResponse.ok) throw new Error(integrationsData.error || "Не удалось загрузить Telegram-ботов.");
+    const labels: Record<string, string> = {};
+    for (const item of integrationsData.integrations || []) {
+      if (item.kind === "telegram") {
+        const username = typeof item.metadata?.username === "string" ? "@" + item.metadata.username.replace(/^@/, "") : "";
+        labels[item.id] = item.label || username || item.external_account_id || "Telegram bot";
+      }
+    }
+    setBotLabels(labels);
     setChannels(channelData.channels || []);
     setFlows(flowData.flows || []);
     setPrompts(promptData.prompts || []);
@@ -142,7 +154,7 @@ export default function AutopostingPanel() {
         <label>Целевой канал
           <select value={form.channelId} onChange={e => update("channelId", e.target.value)} required>
             <option value="">Выберите подключённый Telegram-канал</option>
-            {channels.map(c => <option key={c.id} value={c.id}>{c.title}{c.username ? ` · @${c.username}` : ""}</option>)}
+            {channels.map(c => <option key={c.id} value={c.id}>{c.title}{c.username ? ` · @${c.username}` : ""} — {botLabels[c.integration_id] || "Telegram bot"}</option>)}
           </select>
         </label>
         {channels.length === 0 && <p className="integration-security">Сначала добавьте канал в Telegram Workspace и проверьте право бота на публикацию.</p>}
