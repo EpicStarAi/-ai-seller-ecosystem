@@ -96,7 +96,11 @@ export default function ModerationPanel() {
 
   async function act(id: string, action: "publish" | "reject" | "rewrite" | "approve") {
     if (!organizationId) return;
-    if (action === "publish" && !window.confirm("Опубликовать этот текст в канал потока? Публикация уйдёт сразу.")) return;
+    const target = posts.find((post) => post.id === id);
+    const queues = action === "publish" && target ? flowAutoPublish(target) && target.status !== "approved" : false;
+    if (action === "publish" && !window.confirm(queues
+      ? "Поставить пост в очередь? У потока включена автопубликация: пост уйдёт в канал по расписанию, не сразу."
+      : "Опубликовать этот текст в канал потока? Публикация уйдёт сразу.")) return;
     if (action === "approve" && !window.confirm("Поставить черновик в очередь автопубликации? Он уйдёт в канал по расписанию потока, не сразу.")) return;
     if (action === "reject" && !window.confirm("Отклонить этот черновик? Он больше не появится в очереди.")) return;
     setBusyId(id); setError(""); setNotice("");
@@ -115,7 +119,8 @@ export default function ModerationPanel() {
         else if (illustration?.status === "skipped") setNotice(`Текст переписан. ${illustrationReason(illustration.reason)}`);
         else setNotice("Текст переписан. Проверьте черновик и опубликуйте вручную или поставьте в очередь.");
       } else if (action === "publish") {
-        setNotice(data.messageId ? `Публикация отправлена (сообщение ${data.messageId}).` : "Публикация отправлена.");
+        if (data.queued) setNotice("Пост поставлен в очередь автопубликации и уйдёт по расписанию потока.");
+        else setNotice(data.messageId ? `Публикация отправлена (сообщение ${data.messageId}).` : "Публикация отправлена.");
       } else if (action === "approve") {
         setNotice("Черновик поставлен в очередь автопубликации.");
       } else {
@@ -136,7 +141,7 @@ export default function ModerationPanel() {
       <div className="panel-head">
         <div>
           <h2>Модерация публикаций</h2>
-          <p>Черновики после AI-переписывания. «Опубликовать» отправляет сразу. «Одобрить в очередь» появляется только у потоков с включённой автопубликацией.</p>
+          <p>Черновики после AI-переписывания. Если у потока включена автопубликация, «Опубликовать» ставит пост в очередь; «Опубликовать сейчас» у поста из очереди отправляет его сразу. Без автопубликации «Опубликовать» отправляет сразу.</p>
         </div>
         <div className="moderation-head-actions">
           <span className="pill warning">{pendingCount} на проверке</span>

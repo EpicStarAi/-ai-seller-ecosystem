@@ -4,6 +4,8 @@ import { createServiceClient } from "@/lib/supabase/service";
 import { loadBotSecret } from "@/lib/bot-replies/secrets";
 import { handleBotUpdate } from "@/lib/bot-replies/engine";
 import { PUBLIC_BOT_COLUMNS } from "@/lib/bot-replies/constants";
+import { TRAFFIC_BOT_COLUMNS } from "@/lib/traffic/constants";
+import { handleTrafficUpdate } from "@/lib/traffic/engine";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,7 +25,7 @@ export async function POST(request: Request, context: { params: Promise<{ botId:
   }
   const supabase = createServiceClient();
   const { data: bot } = await supabase.from("bot_autoreplies")
-    .select(PUBLIC_BOT_COLUMNS)
+    .select(`${PUBLIC_BOT_COLUMNS},${TRAFFIC_BOT_COLUMNS}`)
     .eq("id", botId)
     .maybeSingle();
   if (!bot) return NextResponse.json({ error: "Not found." }, { status: 404 });
@@ -35,7 +37,10 @@ export async function POST(request: Request, context: { params: Promise<{ botId:
   const update = await request.json().catch(() => null);
   if (!update || typeof update !== "object") return NextResponse.json({ ok: true });
   try {
-    await handleBotUpdate(bot, stored.token, update);
+    const handled = bot.traffic_enabled === true
+      ? await handleTrafficUpdate(bot, stored.token, update)
+      : false;
+    if (!handled) await handleBotUpdate(bot, stored.token, update);
   } catch {
     // Acknowledge so Telegram does not hammer retries with the same secret.
   }

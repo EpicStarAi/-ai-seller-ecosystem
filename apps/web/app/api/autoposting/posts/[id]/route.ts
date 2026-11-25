@@ -106,7 +106,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   const ctx = await access(request, true);
   if ("response" in ctx) return ctx.response;
   const { id } = await context.params;
-  let body: { action?: string; draftText?: string } = {};
+  let body: { action?: string; draftText?: string; publishNow?: boolean } = {};
   try { body = await request.json(); } catch { body = {}; }
   const action = body.action;
   const post = await loadPost(ctx, id);
@@ -205,9 +205,19 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     const preparedMedia = parsePostMedia(post.media);
     if (!draftText && preparedMedia.items.length === 0) return NextResponse.json({ error: "Пустой текст нельзя опубликовать." }, { status: 422 });
     const { data: flow } = await ctx.supabase.from("autoposting_flows")
-      .select("id,channel_id,moderation_enabled,post_buttons")
+      .select("id,channel_id,moderation_enabled,post_buttons,auto_publish_enabled")
       .eq("id", post.flow_id).eq("organization_id", ctx.organizationId).maybeSingle();
     if (!flow) return NextResponse.json({ error: "Поток не найден." }, { status: 404 });
+    // With the queue on, "Опубликовать" enqueues instead of sending immediately, so the channel
+    // keeps its schedule. An already-queued post ("Опубликовать сейчас") or an explicit
+    // publishNow still goes out right away.
+    if (flow.auto_publish_enabled === true && post.status !== "approved" && body.publishNow !== true) {
+      const { error: queueError } = await ctx.supabase.from("autoposting_posts").update({
+        status: "approved", draft_text: draftText, reviewed_by: ctx.user.id, reviewed_at: now, updated_at: now, last_error: null,
+      }).eq("id", post.id).eq("organization_id", ctx.organizationId);
+      if (queueError) return NextResponse.json({ error: "Не удалось поставить черновик в очередь." }, { status: 500 });
+      return NextResponse.json({ ok: true, status: "approved", queued: true });
+    }
     if (flow.moderation_enabled !== true) {
       return NextResponse.json({ error: "Для этого потока публикация возможна только с включённой модерацией и явным одобрением." }, { status: 409 });
     }

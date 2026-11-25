@@ -56,7 +56,7 @@ export async function telegramSetWebhook(token: string, url: string, secretToken
     url,
     secret_token: secretToken,
     drop_pending_updates: true,
-    allowed_updates: ["message"],
+    allowed_updates: ["message", "callback_query"],
   });
 }
 
@@ -78,4 +78,27 @@ export async function telegramForwardMessage(token: string, toChatId: string | n
     from_chat_id: fromChatId,
     message_id: messageId,
   });
+}
+
+export type ChatMember = { status?: string; is_member?: boolean };
+
+export async function telegramGetChatMember(token: string, chatId: string | number, userId: number) {
+  return telegramCall<ChatMember>(token, "getChatMember", { chat_id: chatId, user_id: userId });
+}
+
+export function isSubscribedStatus(member: ChatMember | null | undefined) {
+  if (!member?.status) return false;
+  if (["creator", "administrator", "member"].includes(member.status)) return true;
+  return member.status === "restricted" && member.is_member === true;
+}
+
+export async function telegramAnswerCallbackQuery(token: string, callbackQueryId: string, text?: string, showAlert = false) {
+  return telegramCall(token, "answerCallbackQuery", {
+    callback_query_id: callbackQueryId,
+    ...(text ? { text: text.slice(0, 200), show_alert: showAlert } : {}),
+  });
+}
+
+export async function telegramCreateChatInviteLink(token: string, chatId: string | number, name: string) {
+  return telegramCall<{ invite_link: string }>(token, "createChatInviteLink", { chat_id: chatId, name: name.slice(0, 32) });
 }

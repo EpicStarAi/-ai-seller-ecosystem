@@ -7,6 +7,7 @@ import AutopostingPanel from "@/components/autoposting-panel";
 import ModerationPanel from "@/components/moderation-panel";
 import PromptLibraryPanel from "@/components/prompt-library-panel";
 import BotRepliesPanel from "@/components/bot-replies-panel";
+import TrafficPanel from "@/components/traffic-panel";
 import DonorManagerPanel from "@/components/donor-manager-panel";
 import FirecrawlSourcesPanel from "@/components/firecrawl-sources-panel";
 import TelegramIntakePanel from "@/components/telegram-intake-panel";
@@ -22,7 +23,7 @@ import {
   Sparkles, Workflow, X, Zap, LogOut, Wrench
 } from "lucide-react";
 
-type Section = "Обзор" | "Инструменты" | "AI Assistant" | "AI Agent Studio" | "Telegram Workspace" | "AI Автопостинг" | "Модерация" | "Промпты" | "Donor Manager" | "Воронки" | "Кампании" | "Контент-студия" | "CRM" | "Автоматизация" | "Интеграции" | "Использование" | "Автоответы" | "Настройки";
+type Section = "Обзор" | "Инструменты" | "AI Assistant" | "AI Agent Studio" | "Telegram Workspace" | "AI Автопостинг" | "Модерация" | "Промпты" | "Donor Manager" | "Воронки" | "Кампании" | "Контент-студия" | "CRM" | "Автоматизация" | "Интеграции" | "Использование" | "Автоответы" | "Трафик" | "Настройки";
 
 const nav: { group: string; items: { label: Section; icon: typeof LayoutDashboard }[] }[] = [
   { group: "РАБОЧЕЕ ПРОСТРАНСТВО", items: [
@@ -30,7 +31,7 @@ const nav: { group: string; items: { label: Section; icon: typeof LayoutDashboar
     { label: "AI Agent Studio", icon: Bot }, { label: "Telegram Workspace", icon: MessageCircle }
   ]},
   { group: "ПРОДАЖИ И МАРКЕТИНГ", items: [
-    { label: "Воронки", icon: GitBranch }, { label: "AI Автопостинг", icon: Send }, { label: "Модерация", icon: ClipboardCheck }, { label: "Промпты", icon: FileText }, { label: "Автоответы", icon: MessageCircle }, { label: "Donor Manager", icon: RadioTower }, { label: "Кампании", icon: Send },
+    { label: "Воронки", icon: GitBranch }, { label: "AI Автопостинг", icon: Send }, { label: "Модерация", icon: ClipboardCheck }, { label: "Промпты", icon: FileText }, { label: "Автоответы", icon: MessageCircle }, { label: "Трафик", icon: Zap }, { label: "Donor Manager", icon: RadioTower }, { label: "Кампании", icon: Send },
     { label: "Контент-студия", icon: FileText }, { label: "CRM", icon: ContactRound }
   ]},
   { group: "СИСТЕМА", items: [
@@ -49,6 +50,7 @@ const descriptions: Record<Section, string> = {
   "Модерация": "Очередь черновиков: проверка AI-текста и ручная публикация в канал.",
   "Промпты": "Библиотека сохранённых инструкций для AI-переписывания постов.",
   "Автоответы": "Автоответы Telegram-бота, нейроассистент и режим оператора. По умолчанию выключено.",
+  "Трафик": "Рефералы, розыгрыши с проверкой подписки и метки источников трафика через бота.",
   "Donor Manager": "Telegram-каналы и веб-источники Firecrawl для контентных потоков.",
   "Воронки": "Визуальная схема сценариев привлечения и обработки лидов.",
   "Кампании": "Планирование коммуникаций для согласованных аудиторий.",
@@ -72,7 +74,9 @@ export default function Home() {
     // remounts this client page, which resets section state and leaves panels
     // stuck on their loading screen.
     try {
-      if (new URLSearchParams(window.location.search).get("section") === "moderation") setActive("Модерация");
+      const section = new URLSearchParams(window.location.search).get("section");
+      if (section === "moderation") setActive("Модерация");
+      if (section === "traffic") setActive("Трафик");
     } catch {}
   }, []);
   const [showAgentForm, setShowAgentForm] = useState(false);
@@ -117,6 +121,7 @@ export default function Home() {
     if (active === "Модерация") return <ModerationPanel />;
     if (active === "Промпты") return <PromptLibraryPanel />;
     if (active === "Автоответы") return <BotRepliesPanel />;
+    if (active === "Трафик") return <TrafficPanel />;
     if (active === "Donor Manager") return <><DonorManagerPanel /><TelegramIntakePanel /><FirecrawlSourcesPanel /></>;
     if (active === "Контент-студия") return <Placeholder icon={FileText} title="Контент-студия" text="Черновики публикаций, генерация материалов и контент-календарь." status="Черновиков пока нет"/>;
     if (active === "Использование") return <Placeholder icon={ChartNoAxesCombined} title="Использование ресурсов" text="Здесь появятся запросы к моделям, токены, стоимость и лимиты." status="Учёт расходов ещё не подключён"/>;
