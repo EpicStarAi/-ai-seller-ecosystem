@@ -342,7 +342,7 @@ function extractMedia(metadata) {
 }
 
 async function rewriteOnce() {
-  const items = await sb("telegram_content_items?select=id,organization_id,flow_id,donor_id,source_url,source_message_id,title,body,metadata,created_at&order=created_at.asc&limit=40");
+  const items = await sb("telegram_content_items?select=id,organization_id,flow_id,donor_id,source_url,source_message_id,title,body,metadata,created_at&order=created_at.desc&limit=40");
   if (!Array.isArray(items) || items.length === 0) {
     log("rewrite: no content items");
     return { processed: 0, pending: 0, rejected: 0, skipped: 0 };
@@ -573,7 +573,7 @@ function readStoredMedia(relpath) {
 }
 
 async function publishDue() {
-  const flows = await sb("autoposting_flows?auto_publish_enabled=eq.true&select=id,organization_id,name,channel_id,post_buttons,auto_publish_mode,auto_publish_interval_minutes,auto_publish_slots,auto_publish_timezone,auto_publish_last_at,moderation_enabled");
+  const flows = await sb("autoposting_flows?auto_publish_enabled=eq.true&select=id,organization_id,name,channel_id,auto_publish_enabled,post_buttons,auto_publish_mode,auto_publish_interval_minutes,auto_publish_slots,auto_publish_timezone,auto_publish_last_at,moderation_enabled");
   if (!Array.isArray(flows) || flows.length === 0) {
     log("schedule: no flows with auto-publish enabled");
     return { published: 0 };
@@ -586,7 +586,7 @@ async function publishDue() {
       ? Boolean(slotMatches(now, flow.auto_publish_slots, flow.auto_publish_last_at, flow.auto_publish_timezone || "Europe/Kyiv"))
       : isIntervalDue(now, flow.auto_publish_last_at, Number(flow.auto_publish_interval_minutes) || 60);
     if (!due) continue;
-    const rows = await sb(`autoposting_posts?flow_id=eq.${flow.id}&status=eq.approved&select=id,organization_id,flow_id,draft_text,source_url,media&order=created_at.asc&limit=1`);
+    const rows = await sb(`autoposting_posts?flow_id=eq.${flow.id}&status=eq.approved&select=id,organization_id,flow_id,draft_text,source_url,media&order=created_at.desc&limit=1`);
     const post = rows?.[0];
     if (!post) continue;
     const text = String(post.draft_text || "").trim();

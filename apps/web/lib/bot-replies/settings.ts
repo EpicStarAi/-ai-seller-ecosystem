@@ -17,7 +17,7 @@ export function parseBotSettings(body: Record<string, unknown>, partial = false)
   }
   if (Object.prototype.hasOwnProperty.call(body, "promptId") || Object.prototype.hasOwnProperty.call(body, "prompt_id")) {
     const raw = body.promptId ?? body.prompt_id;
-    if (raw === null || raw === "") value.prompt_id = null;
+    if (raw === null || raw === undefined || raw === "") value.prompt_id = null;
     else if (typeof raw === "string" && raw.trim()) value.prompt_id = raw.trim();
     else return { error: "Некорректный сохранённый промпт." };
   }
