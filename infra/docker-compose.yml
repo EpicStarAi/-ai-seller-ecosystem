@@ -6,7 +6,7 @@ services:
     env_file:
       - ../.env
     ports:
-      - "8000:8000"
+      - "${API_PORT:-8000}:8000"
     depends_on:
       postgres:
         condition: service_healthy
@@ -18,15 +18,15 @@ services:
     image: postgres:16-alpine
     environment:
       POSTGRES_DB: ai_seller
-      POSTGRES_USER: app
-      POSTGRES_PASSWORD: change-me-local-only
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: change-me-postgres-local-only
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./postgres/migrations:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U app -d ai_seller"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ai_seller"]
       interval: 5s
       timeout: 3s
       retries: 20
